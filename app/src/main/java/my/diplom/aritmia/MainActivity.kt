@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var db: AppDatabase
 
+    // test master
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
