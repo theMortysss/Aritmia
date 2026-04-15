@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.items
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
-import my.diplom.aritmia.ui.screen.clarify.diagnoseSymptom
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.Alignment

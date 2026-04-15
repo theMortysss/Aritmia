@@ -1,6 +1,5 @@
 package my.diplom.aritmia.data
 
-import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.room.*
@@ -29,20 +28,16 @@ enum class Role { PATIENT, DOCTOR, ADMIN }
 
 object RoleConverter {
     @TypeConverter fun fromRole(role: Role): String = role.name
-    @TypeConverter fun toRole(role: String): Role = Role.valueOf(role)
+    @TypeConverter fun toRole(role: String): Role   = Role.valueOf(role)
 }
 
 // ── Конвертер дат ──────────────────────────────────────────────────────────────
 
 @RequiresApi(Build.VERSION_CODES.O)
 object LocalDateTimeConverter {
-    private val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-
-    @TypeConverter fun fromString(value: String?): LocalDateTime? =
-        value?.let { LocalDateTime.parse(it, formatter) }
-
-    @TypeConverter fun toString(dt: LocalDateTime?): String? =
-        dt?.format(formatter)
+    private val fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    @TypeConverter fun fromString(v: String?): LocalDateTime? = v?.let { LocalDateTime.parse(it, fmt) }
+    @TypeConverter fun toString(dt: LocalDateTime?): String?  = dt?.format(fmt)
 }
 
 // ── Симптом / Диагноз ──────────────────────────────────────────────────────────
@@ -90,8 +85,8 @@ interface UserDao {
 
     @Query("SELECT * FROM User") suspend fun getAllUsers(): List<User>
     @Query("SELECT * FROM User WHERE role = 'PATIENT'") suspend fun getAllPatients(): List<User>
-    @Query("SELECT * FROM User WHERE role = 'DOCTOR'")  suspend fun getAllDoctors(): List<User>
-    @Query("SELECT * FROM User WHERE role = 'ADMIN'")   suspend fun getAllAdmins(): List<User>
+    @Query("SELECT * FROM User WHERE role = 'DOCTOR'")  suspend fun getAllDoctors():  List<User>
+    @Query("SELECT * FROM User WHERE role = 'ADMIN'")   suspend fun getAllAdmins():   List<User>
 
     @Query("SELECT * FROM User WHERE id = :id AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientById(id: Int): User?
@@ -114,7 +109,8 @@ interface SymptomDao {
     @Insert suspend fun insert(symptom: SymptomEntity)
     @Update suspend fun update(symptom: SymptomEntity)
 
-    @Query("SELECT * FROM SymptomEntity") suspend fun getAllSymptoms(): List<SymptomEntity>
+    @Query("SELECT * FROM SymptomEntity")
+    suspend fun getAllSymptoms(): List<SymptomEntity>
 
     @Query("""
         SELECT SymptomEntity.*
@@ -129,13 +125,8 @@ interface SymptomDao {
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getSymptomsFiltered(
-        phoneFilter: String,
-        nameFilter: String,
-        minProbability: Int,
-        startDate: String?,
-        endDate: String?,
-        limit: Int,
-        offset: Int
+        phoneFilter: String, nameFilter: String, minProbability: Int,
+        startDate: String?, endDate: String?, limit: Int, offset: Int
     ): List<SymptomEntity>
 
     @Query("""
@@ -150,11 +141,8 @@ interface SymptomDao {
         AND User.role = 'PATIENT'
     """)
     suspend fun getFilteredCount(
-        phoneFilter: String,
-        nameFilter: String,
-        minProbability: Int,
-        startDate: String?,
-        endDate: String?
+        phoneFilter: String, nameFilter: String, minProbability: Int,
+        startDate: String?, endDate: String?
     ): Int
 
     @Query("SELECT * FROM SymptomEntity WHERE patientId = :patientId")
@@ -178,22 +166,20 @@ interface RuleDao {
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Database(
-    entities  = [User::class, SymptomEntity::class, RuleEntity::class],
-    version   = 7,
+    entities     = [User::class, SymptomEntity::class, RuleEntity::class],
+    version      = 7,
     exportSchema = false
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun userDao(): UserDao
+    abstract fun userDao():    UserDao
     abstract fun symptomDao(): SymptomDao
-    abstract fun ruleDao(): RuleDao
+    abstract fun ruleDao():    RuleDao
 
     companion object {
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE SymptomEntity ADD COLUMN nnProbability INTEGER"
-                )
+                db.execSQL("ALTER TABLE SymptomEntity ADD COLUMN nnProbability INTEGER")
             }
         }
     }

@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
-import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
 import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenIntent
@@ -33,7 +32,7 @@ class SymptomsViewModel @Inject constructor(
     val state: StateFlow<SymptomsScreenState> = _state.asStateFlow()
 
     init {
-        val prefs = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val prefs     = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val patientId = prefs.getInt("current_patient_id", -1)
         _state.update { it.copy(patientId = patientId) }
 
@@ -49,13 +48,13 @@ class SymptomsViewModel @Inject constructor(
 
     fun onIntent(intent: SymptomsScreenIntent) {
         when (intent) {
+
             is SymptomsScreenIntent.UpdateNewSymptom -> {
                 val suggestions = if (intent.newSymptom.isNotBlank()) {
                     _state.value.rules
                         .map { it.symptomKey }
                         .filter { it.contains(intent.newSymptom, ignoreCase = true) }
-                        .distinct()
-                        .sorted()
+                        .distinct().sorted()
                 } else emptyList()
                 _state.update { it.copy(newSymptom = intent.newSymptom, suggestions = suggestions) }
             }
@@ -66,7 +65,7 @@ class SymptomsViewModel @Inject constructor(
                 }
 
             is SymptomsScreenIntent.AddSymptom -> {
-                val s = _state.value.newSymptom
+                val s = _state.value.newSymptom.trim()
                 if (s.isNotBlank()) {
                     _state.update {
                         it.copy(
@@ -86,9 +85,9 @@ class SymptomsViewModel @Inject constructor(
                 val toDelete = _state.value.showDeleteDialog ?: return
                 _state.update {
                     it.copy(
-                        symptoms       = it.symptoms.filter { s -> s != toDelete },
+                        symptoms        = it.symptoms.filter { s -> s != toDelete },
                         showDeleteDialog = null,
-                        isDiagnosed    = false
+                        isDiagnosed     = false
                     )
                 }
             }
@@ -117,31 +116,24 @@ class SymptomsViewModel @Inject constructor(
                             return@launch
                         }
                         if (!_state.value.isDiagnosed) {
-                            val diagnoses = symptoms.map { symptom ->
-                                diagnoseSymptom(symptom, rules, emptyMap())
-                            }
+                            val nnRaw = networkRepository.predict(symptoms)
+                            val nnProbability = nnRaw?.let { (it * 100).toInt().coerceIn(0, 100) } ?: 0
 
-                            // ── Нейросетевая вероятность ───────────────────────
-                            val nnProbability = networkRepository.predict(symptoms)
-                            val finalProbability = if (nnProbability != null) {
-                                // Среднее между экспертной системой и нейросетью
-                                val expertProb = diagnoses.sumOf { it.probability }
-                                ((expertProb + nnProbability * 100.0) / 2.0).toInt()
-                                    .coerceIn(0, 100)
-                            } else {
-                                diagnoses.sumOf { it.probability }
-                            }
+                            // Получаем медицинские термины через маппинг правил
+                            val medicalTerms = symptoms.mapNotNull { symptom ->
+                                rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
+                                    ?.medicalTerm
+                            }.joinToString(", ")
 
                             db.symptomDao().insert(
                                 SymptomEntity(
-                                    userInput          = symptoms.joinToString(". "),
-                                    medicalTerm        = diagnoses.mapNotNull { it.medicalTerm }
-                                        .joinToString(", "),
-                                    probability        = finalProbability,
-                                    patientId          = patientId,
-                                    clarifyingAnswers  = null,
-                                    createdAt          = LocalDateTime.now(),
-                                    nnProbability      = nnProbability?.let { (it * 100).toInt() }
+                                    userInput        = symptoms.joinToString(". "),
+                                    medicalTerm      = medicalTerms.ifBlank { null },
+                                    probability      = nnProbability,
+                                    patientId        = patientId,
+                                    clarifyingAnswers = null,
+                                    createdAt        = LocalDateTime.now(),
+                                    nnProbability    = nnProbability
                                 )
                             )
                             _state.update { it.copy(navigateToDiagnose = true, isDiagnosed = true) }
@@ -159,41 +151,7 @@ class SymptomsViewModel @Inject constructor(
 
     fun resetDiagnosedState() {
         _state.update {
-            it.copy(
-                navigateToDiagnose = false,
-                isDiagnosed        = false,
-                symptoms           = emptyList()
-            )
+            it.copy(navigateToDiagnose = false, isDiagnosed = false, symptoms = emptyList())
         }
     }
-}
-
-// ── Вспомогательные функции ────────────────────────────────────────────────────
-
-data class DiagnosedSymptom(
-    val userInput: String,
-    val medicalTerm: String?,
-    val probability: Int
-)
-
-fun diagnoseSymptom(
-    symptom: String,
-    rules: List<RuleEntity>,
-    answers: Map<String, List<String>>
-): DiagnosedSymptom {
-    val matchingRule = rules.find { rule ->
-        symptom.contains(rule.symptomKey, ignoreCase = true)
-    } ?: return DiagnosedSymptom(symptom, null, 0)
-
-    val baseTerm = matchingRule.medicalTerm
-    val answersForSymptom = answers[matchingRule.symptomKey]?.filter { it.isNotBlank() } ?: emptyList()
-
-    val updatedTerm = if (answersForSymptom.isNotEmpty() && matchingRule.answerTriggers != null) {
-        matchingRule.answerTriggers.split(";").find { trigger ->
-            val triggerAnswer = trigger.split("=").firstOrNull()
-            answersForSymptom.any { it.equals(triggerAnswer, ignoreCase = true) }
-        }?.split("=")?.getOrNull(1) ?: baseTerm
-    } else baseTerm
-
-    return DiagnosedSymptom(symptom, updatedTerm, matchingRule.probabilityWeight)
 }

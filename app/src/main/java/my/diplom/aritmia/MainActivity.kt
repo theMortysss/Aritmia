@@ -17,12 +17,11 @@ import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.SymptomEntity
-import my.diplom.aritmia.data.User
 import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.admin.AdminScreen
 import my.diplom.aritmia.ui.screen.clarify.ClarifyScreen
-import my.diplom.aritmia.ui.screen.clarify.diagnoseSymptom
+import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.doctor.DoctorScreen
 import my.diplom.aritmia.ui.screen.login.LoginScreen
 import my.diplom.aritmia.ui.screen.result.ResultScreen
@@ -45,11 +44,10 @@ class MainActivity : ComponentActivity() {
         val savedAdminId   = prefs.getInt("current_admin_id",   -1).takeIf { it != -1 }
 
         setContent {
-            val navController = rememberNavController()
-            val scope         = rememberCoroutineScope()
+            val navController    = rememberNavController()
+            val scope            = rememberCoroutineScope()
             val sharedViewModel: SharedViewModel = viewModel()
 
-            // Восстанавливаем сессию пациента
             LaunchedEffect(Unit) {
                 if (savedPatientId != null) {
                     val patient = db.userDao().getPatientById(savedPatientId)
@@ -83,8 +81,7 @@ class MainActivity : ComponentActivity() {
                         onLoginSuccess = { user ->
                             scope.launch {
                                 if (!networkRepository.isReady()) {
-                                    val rules = db.ruleDao().getAllRules()
-                                    networkRepository.initialize(rules)
+                                    networkRepository.initialize(db.ruleDao().getAllRules())
                                 }
                             }
                             when (user.role) {
@@ -142,34 +139,34 @@ class MainActivity : ComponentActivity() {
                             symptoms       = symptoms,
                             userId         = userId,
                             initialAnswers = initialAnswers,
-                            onFinish       = { diagnoses, answers ->
+                            onFinish       = { answers ->
                                 scope.launch {
-                                    val patient = db.userDao().getPatientById(userId)
-                                    if (patient != null) {
-                                        val nnProb = networkRepository.predict(symptoms)
-                                        val expertProb = diagnoses.sumOf { it.probability }
-                                        val finalProb = if (nnProb != null)
-                                            ((expertProb + nnProb * 100) / 2).toInt().coerceIn(0, 100)
-                                        else expertProb
+                                    val patient = db.userDao().getPatientById(userId) ?: return@launch
+                                    val rules   = db.ruleDao().getAllRules()
 
-                                        db.symptomDao().insert(
-                                            SymptomEntity(
-                                                userInput         = diagnoses.joinToString(". ") { it.userInput },
-                                                medicalTerm       = diagnoses.mapNotNull { it.medicalTerm }
-                                                    .joinToString(", "),
-                                                probability       = finalProb,
-                                                patientId         = userId,
-                                                clarifyingAnswers = answers.entries
-                                                    .filter { it.value.any { a -> a.isNotBlank() } }
-                                                    .joinToString(";") {
-                                                        "${it.key}=${it.value.joinToString(",")}"
-                                                    },
-                                                nnProbability     = nnProb?.let { (it * 100).toInt() }
-                                            )
+                                    val nnRaw  = networkRepository.predict(symptoms)
+                                    val nnProb = nnRaw?.let { (it * 100).toInt().coerceIn(0, 100) } ?: 0
+
+                                    val medTerms = symptoms.mapNotNull { s ->
+                                        resolveSymptomTerm(s, rules, answers).medicalTerm
+                                    }.joinToString(", ")
+
+                                    db.symptomDao().insert(
+                                        SymptomEntity(
+                                            userInput         = symptoms.joinToString(". "),
+                                            medicalTerm       = medTerms.ifBlank { null },
+                                            probability       = nnProb,
+                                            patientId         = userId,
+                                            clarifyingAnswers = answers.entries
+                                                .filter { it.value.any { a -> a.isNotBlank() } }
+                                                .joinToString(";") {
+                                                    "${it.key}=${it.value.joinToString(",")}"
+                                                },
+                                            nnProbability     = nnProb
                                         )
-                                        sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result")
-                                    }
+                                    )
+                                    sharedViewModel.updateAnswers(answers)
+                                    navController.navigate("result")
                                 }
                             },
                             onLogout = onLogout
@@ -196,14 +193,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // ── Doctor ─────────────────────────────────────────────────────
-                composable("doctor") {
-                    DoctorScreen(onLogout = onLogout)
-                }
+                composable("doctor") { DoctorScreen(onLogout = onLogout) }
 
                 // ── Admin ──────────────────────────────────────────────────────
-                composable("admin") {
-                    AdminScreen(onLogout = onLogout)
-                }
+                composable("admin") { AdminScreen(onLogout = onLogout) }
             }
         }
     }

@@ -32,9 +32,9 @@ class ClarifyViewModel @Inject constructor(
             is ClarifyScreenIntent.Initialize -> {
                 _state.update {
                     it.copy(
-                        symptoms = intent.symptoms,
-                        userId   = intent.userId,
-                        answers  = intent.initialAnswers.toMutableMap()
+                        symptoms  = intent.symptoms,
+                        userId    = intent.userId,
+                        answers   = intent.initialAnswers.toMutableMap()
                             .mapValues { e -> e.value.toMutableList() },
                         isLoading = true
                     )
@@ -42,7 +42,6 @@ class ClarifyViewModel @Inject constructor(
                 viewModelScope.launch {
                     val rules = db.ruleDao().getAllRules()
                     _state.update { it.copy(rules = rules, isLoading = false) }
-
                     if (!networkRepository.isReady()) {
                         networkRepository.initialize(rules)
                     }
@@ -58,47 +57,42 @@ class ClarifyViewModel @Inject constructor(
                 _state.update { it.copy(answers = cur) }
             }
 
-            is ClarifyScreenIntent.Finish -> {
+            is ClarifyScreenIntent.Finish ->
                 _state.update { it.copy(navigateToFinish = true) }
-            }
 
-            is ClarifyScreenIntent.Logout -> {
+            is ClarifyScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }
-            }
         }
     }
 }
 
-// ── Модели ─────────────────────────────────────────────────────────────────────
+// ── Вспомогательная функция ─────────────
 
-data class Diagnosis(
+data class SymptomTermResult(
     val userInput: String,
-    val medicalTerm: String?,
-    val probability: Int
+    val medicalTerm: String?
 )
 
-fun diagnoseSymptom(
+fun resolveSymptomTerm(
     symptom: String,
     rules: List<RuleEntity>,
     answers: Map<String, List<String>>
-): Diagnosis {
+): SymptomTermResult {
     val rule = rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
-        ?: return Diagnosis(symptom, "Нераспознанный симптом", 0)
+        ?: return SymptomTermResult(symptom, null)
 
     var medicalTerm = rule.medicalTerm
-
     rule.clarifyingQuestions
-        ?.split(";")
-        ?.filter { it.isNotBlank() }
+        ?.split(";")?.filter { it.isNotBlank() }
         ?.forEachIndexed { index, _ ->
             val answer = answers[symptom]?.getOrNull(index)
             if (answer != null && answer != "не могу ответить") {
                 rule.answerTriggers?.split(";")?.forEach { trigger ->
-                    val (triggerAnswer, newTerm) = trigger.split("=")
-                    if (answer == triggerAnswer) medicalTerm = newTerm
+                    val parts = trigger.split("=")
+                    if (parts.size == 2 && answer == parts[0]) medicalTerm = parts[1]
                 }
             }
         }
 
-    return Diagnosis(symptom, medicalTerm, rule.probabilityWeight)
+    return SymptomTermResult(symptom, medicalTerm)
 }

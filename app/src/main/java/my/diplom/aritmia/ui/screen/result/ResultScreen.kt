@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -47,8 +47,8 @@ fun ResultScreen(
         viewModel.onIntent(ResultScreenIntent.LoadData(userId))
     }
 
-    val state by viewModel.state.collectAsState()
-    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val state           by viewModel.state.collectAsState()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(state.navigateToClarify, state.navigateBack) {
         if (state.navigateToClarify) navController.navigate("clarify")
@@ -75,60 +75,20 @@ fun ResultScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                // ── Симптомы ───────────────────────────────────────────────────
-                Card(
-                    modifier  = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(2.dp)
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Введённые симптомы", style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold)
-
-                        if (state.recognizedSymptoms.isNotEmpty()) {
-                            Text("Распознанные:", style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary)
-                            state.recognizedMedicalTerms.forEach { term ->
-                                Text("• $term", style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-
-                        if (state.unrecognizedSymptoms.isNotEmpty()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text("Нераспознанные:", style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error)
-                            state.unrecognizedSymptoms.forEach { symptom ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("• $symptom", style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f))
-                                    IconButton(onClick = {
-                                        viewModel.onIntent(ResultScreenIntent.EditSymptom(symptom))
-                                    }) {
-                                        Icon(Icons.Default.Info, "Уточнить симптом",
-                                            tint = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Карточка вероятностей ──────────────────────────────────────
-                ProbabilityCard(
-                    expertProbability = state.diagnosis!!.probability,
-                    nnProbability     = state.nnProbability
+                // ── Карточка симптомов ─────────────────────────────────────────
+                SymptomsCard(
+                    recognizedTerms    = state.recognizedMedicalTerms,
+                    unrecognizedSymptoms = state.unrecognizedSymptoms,
+                    onEditSymptom      = { viewModel.onIntent(ResultScreenIntent.EditSymptom(it)) }
                 )
 
-                // ── Рекомендации ───────────────────────────────────────────────
-                val finalProb = state.diagnosis!!.probability
-                if (finalProb >= 60) {
-                    RecommendationsCard()
-                }
+                // ── Карточка вероятности ──────────────────────────────────────
+                NnProbabilityCard(nnProbability = state.nnProbability)
 
-                // ── Назад ──────────────────────────────────────────────────────
+                // ── Рекомендации при высокой вероятности ──────────────────────
+                val prob = state.nnProbability ?: state.diagnosis!!.probability
+                if (prob >= 60) RecommendationsCard()
+
                 Button(
                     onClick  = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
                     modifier = Modifier.fillMaxWidth()
@@ -139,7 +99,7 @@ fun ResultScreen(
         }
     }
 
-    // ── Диалог редактирования симптома ─────────────────────────────────────────
+    // ── Диалог уточнения нераспознанного симптома ──────────────────────────────
     if (state.showDialog && state.selectedSymptom != null) {
         var expanded by remember { mutableStateOf(false) }
 
@@ -151,12 +111,9 @@ fun ResultScreen(
                     Text("Уточните симптом «${state.selectedSymptom}»:")
                     Spacer(Modifier.height(8.dp))
                     ExposedDropdownMenuBox(
-                        expanded        = expanded,
-                        onExpandedChange = {
-                            expanded = it
-                            if (expanded) keyboardController?.show()
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                        expanded         = expanded,
+                        onExpandedChange = { expanded = it; if (it) keyboardController?.show() },
+                        modifier         = Modifier.fillMaxWidth()
                     ) {
                         OutlinedTextField(
                             value       = state.editedSymptom,
@@ -179,14 +136,13 @@ fun ResultScreen(
                             })
                         )
                         ExposedDropdownMenu(
-                            expanded        = expanded,
+                            expanded         = expanded,
                             onDismissRequest = { expanded = false }
                         ) {
                             if (state.suggestions.isEmpty() && state.editedSymptom.isNotBlank()) {
                                 DropdownMenuItem(
                                     text    = { Text("Совпадений не найдено") },
-                                    onClick = {},
-                                    enabled = false
+                                    onClick = {}, enabled = false
                                 )
                             } else {
                                 state.suggestions.forEach { s ->
@@ -217,13 +173,63 @@ fun ResultScreen(
     }
 }
 
-// ── Карточка вероятностей ──────────────────────────────────────────────────────
+// ── Карточки ───────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ProbabilityCard(
-    expertProbability: Int,
-    nnProbability: Int?
+private fun SymptomsCard(
+    recognizedTerms: List<String>,
+    unrecognizedSymptoms: List<String>,
+    onEditSymptom: (String) -> Unit
 ) {
+    Card(
+        modifier  = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Симптомы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            if (recognizedTerms.isNotEmpty()) {
+                Text("Распознаны:", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary)
+                recognizedTerms.forEach {
+                    Text("• $it", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            if (unrecognizedSymptoms.isNotEmpty()) {
+                if (recognizedTerms.isNotEmpty()) Spacer(Modifier.height(4.dp))
+                Text("Не распознаны:", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+                unrecognizedSymptoms.forEach { symptom ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("• $symptom", modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium)
+                        IconButton(onClick = { onEditSymptom(symptom) }) {
+                            Icon(Icons.Default.Info, "Уточнить",
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+
+            if (recognizedTerms.isEmpty() && unrecognizedSymptoms.isEmpty()) {
+                Text("Симптомы не указаны",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NnProbabilityCard(nnProbability: Int?) {
     Card(
         modifier  = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp)
@@ -238,105 +244,75 @@ private fun ProbabilityCard(
                 fontWeight = FontWeight.Bold
             )
 
-            // Экспертная система
-            ProbabilityRow(
-                label       = "Экспертная система",
-                probability = expertProbability,
-                color       = expertColor(expertProbability)
-            )
-
-            // Нейросеть
             if (nnProbability != null) {
-                HorizontalDivider()
-                ProbabilityRow(
-                    label       = "Нейронная сеть (MLP)",
-                    probability = nnProbability,
-                    color       = expertColor(nnProbability)
+                val color = probabilityColor(nnProbability)
+                val animatedProgress by animateFloatAsState(
+                    targetValue   = nnProbability / 100f,
+                    animationSpec = tween(900),
+                    label         = "nn_progress"
                 )
 
-                // Итоговое (среднее)
-                val combined = ((expertProbability + nnProbability) / 2)
-                HorizontalDivider()
-                ProbabilityRow(
-                    label       = "Итоговая оценка",
-                    probability = combined,
-                    color       = expertColor(combined),
-                    isBold      = true
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Нейронная сеть (MLP)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "$nnProbability%",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize   = 28.sp
+                        ),
+                        color = color
+                    )
+                }
+
+                LinearProgressIndicator(
+                    progress   = { animatedProgress },
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color      = color,
+                    trackColor = color.copy(alpha = 0.15f),
+                    strokeCap  = StrokeCap.Round
+                )
+
+                // Текстовая интерпретация
+                val interpretation = when {
+                    nnProbability >= 75 -> "Высокая вероятность аритмии"
+                    nnProbability >= 50 -> "Умеренная вероятность аритмии"
+                    nnProbability >= 25 -> "Низкая вероятность аритмии"
+                    else                -> "Признаки аритмии не выявлены"
+                }
+                Text(
+                    interpretation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
+                    fontWeight = FontWeight.Medium
                 )
             } else {
-                Text(
-                    "Нейросеть инициализируется...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Нейросеть анализирует данные...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ProbabilityRow(
-    label: String,
-    probability: Int,
-    color: Color,
-    isBold: Boolean = false
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue   = probability / 100f,
-        animationSpec = tween(durationMillis = 800),
-        label         = "progress_$label"
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier            = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment   = Alignment.CenterVertically
-        ) {
-            Text(
-                label,
-                style      = if (isBold) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                             else MaterialTheme.typography.bodyMedium,
-                modifier   = Modifier.weight(1f)
-            )
-            Text(
-                "$probability%",
-                style      = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = if (isBold) 20.sp else 16.sp
-                ),
-                color      = color
-            )
-        }
-        LinearProgressIndicator(
-            progress           = { animatedProgress },
-            modifier           = Modifier
-                .fillMaxWidth()
-                .height(if (isBold) 10.dp else 6.dp)
-                .clip(RoundedCornerShape(50)),
-            color              = color,
-            trackColor         = color.copy(alpha = 0.15f),
-            strokeCap          = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
-private fun expertColor(probability: Int): Color = when {
-    probability >= 60 -> MaterialTheme.colorScheme.error
-    probability >= 30 -> Color(0xFFF57C00)  // orange
-    else              -> Color(0xFF388E3C)  // green
-}
-
-// ── Рекомендации ───────────────────────────────────────────────────────────────
-
-@Composable
 private fun RecommendationsCard() {
     Card(
-        modifier  = Modifier.fillMaxWidth(),
-        colors    = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ),
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(
@@ -354,13 +330,18 @@ private fun RecommendationsCard() {
                 "Сделайте ЭКГ.",
                 "Пройдите Холтер-мониторинг.",
                 "С вами свяжется врач. Если звонок не поступил в течение 3 рабочих дней — запишитесь самостоятельно."
-            ).forEach { rec ->
-                Text(
-                    "• $rec",
+            ).forEach {
+                Text("• $it",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
+                    color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
     }
+}
+
+@Composable
+private fun probabilityColor(probability: Int): Color = when {
+    probability >= 60 -> MaterialTheme.colorScheme.error
+    probability >= 30 -> Color(0xFFF57C00)
+    else              -> Color(0xFF388E3C)
 }
