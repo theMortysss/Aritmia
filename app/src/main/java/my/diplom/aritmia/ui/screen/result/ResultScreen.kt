@@ -2,25 +2,33 @@ package my.diplom.aritmia.ui.screen.result
 
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.*
-import my.diplom.aritmia.ui.composable.TopBar
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
-import androidx.navigation.NavController
-import my.diplom.aritmia.ui.screen.SharedViewModel
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+import my.diplom.aritmia.ui.composable.TopBar
+import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
 
 @RequiresApi(Build.VERSION_CODES.O)
@@ -38,24 +46,18 @@ fun ResultScreen(
         viewModel.setSharedViewModel(sharedViewModel)
         viewModel.onIntent(ResultScreenIntent.LoadData(userId))
     }
+
     val state by viewModel.state.collectAsState()
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
     LaunchedEffect(state.navigateToClarify, state.navigateBack) {
-        if (state.navigateToClarify) {
-            navController.navigate("clarify")
-        }
+        if (state.navigateToClarify) navController.navigate("clarify")
         if (state.navigateBack) {
             onBack()
             viewModel.onIntent(ResultScreenIntent.ResetNavigation)
         }
     }
-
-    LaunchedEffect(state.logout) {
-        if (state.logout) {
-            onLogout()
-        }
-    }
+    LaunchedEffect(state.logout) { if (state.logout) onLogout() }
 
     Scaffold(
         topBar = { TopBar(onLogout = { viewModel.onIntent(ResultScreenIntent.Logout) }) }
@@ -64,80 +66,80 @@ fun ResultScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (state.isLoading || state.diagnosis == null || state.rules.isEmpty()) {
-                Text(text = "Загрузка результатов...")
-            } else {
-                Text(
-                    text = "Ваши симптомы: ${state.diagnosis!!.userInput}",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (state.recognizedMedicalTerms.isNotEmpty()) {
-                    Text(text = "Распознанные симптомы:")
-                    state.recognizedMedicalTerms.forEach { term ->
-                        Text(text = "- $term")
-                    }
+            if (state.isLoading || state.diagnosis == null) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
+            } else {
+                // ── Симптомы ───────────────────────────────────────────────────
+                Card(
+                    modifier  = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Введённые симптомы", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold)
 
-                if (state.unrecognizedSymptoms.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Нераспознанные симптомы:")
-                    state.unrecognizedSymptoms.forEach { symptom ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(text = "- $symptom")
-                            IconButton(onClick = {
-                                viewModel.onIntent(ResultScreenIntent.EditSymptom(symptom))
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = "Уточнить симптом",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
+                        if (state.recognizedSymptoms.isNotEmpty()) {
+                            Text("Распознанные:", style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary)
+                            state.recognizedMedicalTerms.forEach { term ->
+                                Text("• $term", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+
+                        if (state.unrecognizedSymptoms.isNotEmpty()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text("Нераспознанные:", style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error)
+                            state.unrecognizedSymptoms.forEach { symptom ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("• $symptom", style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f))
+                                    IconButton(onClick = {
+                                        viewModel.onIntent(ResultScreenIntent.EditSymptom(symptom))
+                                    }) {
+                                        Icon(Icons.Default.Info, "Уточнить симптом",
+                                            tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Вероятность аритмии: ${state.diagnosis!!.probability}%",
-                    style = MaterialTheme.typography.bodyLarge
+                // ── Карточка вероятностей ──────────────────────────────────────
+                ProbabilityCard(
+                    expertProbability = state.diagnosis!!.probability,
+                    nnProbability     = state.nnProbability
                 )
 
-                if (state.diagnosis!!.probability >= 60) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Рекомендации:",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Text(
-                        text = "- Обратитесь к врачу.\n" +
-                                "- Сделайте ЭКГ.\n" +
-                                "- Пройдите Холтер-мониторинг.\n" +
-                                "С вами свяжется врач, ожидайте. Если звонок не поступил в течение 3-х рабочих дней, обратитесь в поликлинику для записи на дополнительные обследования.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                // ── Рекомендации ───────────────────────────────────────────────
+                val finalProb = state.diagnosis!!.probability
+                if (finalProb >= 60) {
+                    RecommendationsCard()
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Назад к вводу симптомов")
+                // ── Назад ──────────────────────────────────────────────────────
+                Button(
+                    onClick  = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Назад к вводу симптомов", modifier = Modifier.padding(8.dp))
+                }
             }
         }
     }
 
+    // ── Диалог редактирования симптома ─────────────────────────────────────────
     if (state.showDialog && state.selectedSymptom != null) {
         var expanded by remember { mutableStateOf(false) }
 
@@ -146,66 +148,52 @@ fun ResultScreen(
             title = { Text("Симптом не распознан") },
             text = {
                 Column {
-                    Text("Симптом \"${state.selectedSymptom}\" не был распознан. Уточните или переформулируйте его:")
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Уточните симптом «${state.selectedSymptom}»:")
+                    Spacer(Modifier.height(8.dp))
                     ExposedDropdownMenuBox(
-                        expanded = expanded,
+                        expanded        = expanded,
                         onExpandedChange = {
                             expanded = it
-                            if (expanded) {
-                                keyboardController?.show()
-                            }
+                            if (expanded) keyboardController?.show()
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         OutlinedTextField(
-                            value = state.editedSymptom,
-                            onValueChange = { newText ->
-                                viewModel.onIntent(ResultScreenIntent.UpdateEditedSymptom(newText))
-                                expanded = newText.isNotBlank()
+                            value       = state.editedSymptom,
+                            onValueChange = { text ->
+                                viewModel.onIntent(ResultScreenIntent.UpdateEditedSymptom(text))
+                                expanded = text.isNotBlank()
                             },
-                            label = { Text("Уточнённый симптом") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
+                            label    = { Text("Уточнённый симптом") },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
                             trailingIcon = {
-                                if (state.editedSymptom.isNotBlank()) {
+                                if (state.editedSymptom.isNotBlank())
                                     ExposedDropdownMenuDefaults.TrailingIcon(
-                                        modifier = Modifier.clickable {
-                                            expanded = !expanded
-                                            if (expanded) {
-                                                keyboardController?.show()
-                                            }
-                                        },
+                                        modifier = Modifier.clickable { expanded = !expanded },
                                         expanded = expanded
                                     )
-                                }
                             },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    keyboardController?.hide()
-                                    expanded = false
-                                }
-                            )
+                            keyboardActions = KeyboardActions(onDone = {
+                                keyboardController?.hide(); expanded = false
+                            })
                         )
-
                         ExposedDropdownMenu(
-                            expanded = expanded,
+                            expanded        = expanded,
                             onDismissRequest = { expanded = false }
                         ) {
                             if (state.suggestions.isEmpty() && state.editedSymptom.isNotBlank()) {
                                 DropdownMenuItem(
-                                    text = { Text("Совпадений не найдено") },
-                                    onClick = { },
+                                    text    = { Text("Совпадений не найдено") },
+                                    onClick = {},
                                     enabled = false
                                 )
                             } else {
-                                state.suggestions.forEach { suggestion ->
+                                state.suggestions.forEach { s ->
                                     DropdownMenuItem(
-                                        text = { Text(suggestion) },
+                                        text    = { Text(s) },
                                         onClick = {
-                                            viewModel.onIntent(ResultScreenIntent.SelectSuggestion(suggestion))
+                                            viewModel.onIntent(ResultScreenIntent.SelectSuggestion(s))
                                             expanded = false
                                         }
                                     )
@@ -216,19 +204,163 @@ fun ResultScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    viewModel.onIntent(ResultScreenIntent.SaveEditedSymptom)
-                }) {
+                Button(onClick = { viewModel.onIntent(ResultScreenIntent.SaveEditedSymptom) }) {
                     Text("Сохранить")
                 }
             },
             dismissButton = {
-                Button(onClick = {
-                    viewModel.onIntent(ResultScreenIntent.DismissDialog)
-                }) {
-                    Text("Оставить как есть")
+                Button(onClick = { viewModel.onIntent(ResultScreenIntent.DismissDialog) }) {
+                    Text("Оставить")
                 }
             }
         )
+    }
+}
+
+// ── Карточка вероятностей ──────────────────────────────────────────────────────
+
+@Composable
+private fun ProbabilityCard(
+    expertProbability: Int,
+    nnProbability: Int?
+) {
+    Card(
+        modifier  = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "Вероятность аритмии",
+                style      = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Экспертная система
+            ProbabilityRow(
+                label       = "Экспертная система",
+                probability = expertProbability,
+                color       = expertColor(expertProbability)
+            )
+
+            // Нейросеть
+            if (nnProbability != null) {
+                HorizontalDivider()
+                ProbabilityRow(
+                    label       = "Нейронная сеть (MLP)",
+                    probability = nnProbability,
+                    color       = expertColor(nnProbability)
+                )
+
+                // Итоговое (среднее)
+                val combined = ((expertProbability + nnProbability) / 2)
+                HorizontalDivider()
+                ProbabilityRow(
+                    label       = "Итоговая оценка",
+                    probability = combined,
+                    color       = expertColor(combined),
+                    isBold      = true
+                )
+            } else {
+                Text(
+                    "Нейросеть инициализируется...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProbabilityRow(
+    label: String,
+    probability: Int,
+    color: Color,
+    isBold: Boolean = false
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue   = probability / 100f,
+        animationSpec = tween(durationMillis = 800),
+        label         = "progress_$label"
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier            = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment   = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                style      = if (isBold) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                             else MaterialTheme.typography.bodyMedium,
+                modifier   = Modifier.weight(1f)
+            )
+            Text(
+                "$probability%",
+                style      = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize   = if (isBold) 20.sp else 16.sp
+                ),
+                color      = color
+            )
+        }
+        LinearProgressIndicator(
+            progress           = { animatedProgress },
+            modifier           = Modifier
+                .fillMaxWidth()
+                .height(if (isBold) 10.dp else 6.dp)
+                .clip(RoundedCornerShape(50)),
+            color              = color,
+            trackColor         = color.copy(alpha = 0.15f),
+            strokeCap          = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun expertColor(probability: Int): Color = when {
+    probability >= 60 -> MaterialTheme.colorScheme.error
+    probability >= 30 -> Color(0xFFF57C00)  // orange
+    else              -> Color(0xFF388E3C)  // green
+}
+
+// ── Рекомендации ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun RecommendationsCard() {
+    Card(
+        modifier  = Modifier.fillMaxWidth(),
+        colors    = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Рекомендации",
+                style      = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color      = MaterialTheme.colorScheme.onErrorContainer
+            )
+            listOf(
+                "Обратитесь к кардиологу.",
+                "Сделайте ЭКГ.",
+                "Пройдите Холтер-мониторинг.",
+                "С вами свяжется врач. Если звонок не поступил в течение 3 рабочих дней — запишитесь самостоятельно."
+            ).forEach { rec ->
+                Text(
+                    "• $rec",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
     }
 }

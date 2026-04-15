@@ -12,14 +12,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
+import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenIntent
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenState
 import javax.inject.Inject
 
 @HiltViewModel
 class ClarifyViewModel @Inject constructor(
-    private val db: AppDatabase
+    private val db: AppDatabase,
+    private val networkRepository: NetworkRepository
 ) : ViewModel() {
+
     private val _state = MutableStateFlow(ClarifyScreenState())
     val state: StateFlow<ClarifyScreenState> = _state.asStateFlow()
 
@@ -30,45 +33,43 @@ class ClarifyViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         symptoms = intent.symptoms,
-                        userId = intent.userId,
-                        answers = intent.initialAnswers.toMutableMap().mapValues { entry ->
-                            entry.value.toMutableList()
-                        },
+                        userId   = intent.userId,
+                        answers  = intent.initialAnswers.toMutableMap()
+                            .mapValues { e -> e.value.toMutableList() },
                         isLoading = true
                     )
                 }
                 viewModelScope.launch {
                     val rules = db.ruleDao().getAllRules()
                     _state.update { it.copy(rules = rules, isLoading = false) }
+
+                    if (!networkRepository.isReady()) {
+                        networkRepository.initialize(rules)
+                    }
                 }
             }
+
             is ClarifyScreenIntent.UpdateAnswer -> {
-                val currentAnswers = _state.value.answers.toMutableMap()
-                val symptomAnswers = currentAnswers[intent.symptom]?.toMutableList() ?: mutableListOf()
-
-                while (symptomAnswers.size <= intent.questionIndex) {
-                    symptomAnswers.add("")
-                }
-                symptomAnswers[intent.questionIndex] = intent.answer
-                currentAnswers[intent.symptom] = symptomAnswers
-                _state.update { it.copy(answers = currentAnswers) }
+                val cur = _state.value.answers.toMutableMap()
+                val ans = cur[intent.symptom]?.toMutableList() ?: mutableListOf()
+                while (ans.size <= intent.questionIndex) ans.add("")
+                ans[intent.questionIndex] = intent.answer
+                cur[intent.symptom] = ans
+                _state.update { it.copy(answers = cur) }
             }
-            is ClarifyScreenIntent.Finish -> {
-                val symptoms = _state.value.symptoms
-                val rules = _state.value.rules
-                val answers = _state.value.answers
 
-                val diagnoses = symptoms.map { symptom ->
-                    diagnoseSymptom(symptom, rules, answers)
-                }
+            is ClarifyScreenIntent.Finish -> {
                 _state.update { it.copy(navigateToFinish = true) }
             }
+
             is ClarifyScreenIntent.Logout -> {
                 _state.update { it.copy(logout = true) }
             }
         }
     }
 }
+
+// ── Модели ─────────────────────────────────────────────────────────────────────
 
 data class Diagnosis(
     val userInput: String,
@@ -81,36 +82,23 @@ fun diagnoseSymptom(
     rules: List<RuleEntity>,
     answers: Map<String, List<String>>
 ): Diagnosis {
-    val rule = rules.find { rule -> symptom.contains(rule.symptomKey, ignoreCase = true) }
-    val symptomAnswers = answers[symptom] ?: emptyList()
-
-    if (rule == null) {
-        return Diagnosis(
-            userInput = symptom,
-            medicalTerm = "Нераспознанный симптом",
-            probability = 0
-        )
-    }
+    val rule = rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
+        ?: return Diagnosis(symptom, "Нераспознанный симптом", 0)
 
     var medicalTerm = rule.medicalTerm
-    var probability = rule.probabilityWeight
 
-    rule.clarifyingQuestions?.split(";")?.filter { it.isNotBlank() }?.forEachIndexed { index, question ->
-        val answer = symptomAnswers.getOrNull(index)
-        if (answer != null && answer != "не могу ответить") {
-            rule.answerTriggers?.split(";")?.forEach { trigger ->
-                val (triggerAnswer, newTerm) = trigger.split("=")
-                if (answer == triggerAnswer) {
-                    medicalTerm = newTerm
-                    println("Symptom: $symptom, Question: $question, Answer: $answer, New Medical Term: $newTerm")
+    rule.clarifyingQuestions
+        ?.split(";")
+        ?.filter { it.isNotBlank() }
+        ?.forEachIndexed { index, _ ->
+            val answer = answers[symptom]?.getOrNull(index)
+            if (answer != null && answer != "не могу ответить") {
+                rule.answerTriggers?.split(";")?.forEach { trigger ->
+                    val (triggerAnswer, newTerm) = trigger.split("=")
+                    if (answer == triggerAnswer) medicalTerm = newTerm
                 }
             }
         }
-    }
 
-    return Diagnosis(
-        userInput = symptom,
-        medicalTerm = medicalTerm,
-        probability = probability
-    )
+    return Diagnosis(symptom, medicalTerm, rule.probabilityWeight)
 }

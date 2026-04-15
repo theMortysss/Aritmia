@@ -17,4 +17,5 @@ data class ResultScreenState(
     val navigateToClarify: Boolean = false,
     val navigateBack: Boolean = false,
     val suggestions: List<String> = emptyList(),
+    val nnProbability: Int? = null
 )

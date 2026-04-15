@@ -27,7 +27,8 @@ data class DoctorScreenState(
     val rules: List<RuleEntity> = emptyList(),
     val showRuleEditor: Boolean = false,
     val selectedRule: RuleEntity? = null,
-    val logout: Boolean = false
+    val logout: Boolean = false,
+    val nnRetraining: Boolean = false
 )
 
 data class SymptomItem(

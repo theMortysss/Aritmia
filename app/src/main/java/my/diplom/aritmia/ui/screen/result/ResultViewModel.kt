@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
+import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenState
@@ -20,8 +21,10 @@ import javax.inject.Inject
 @RequiresApi(Build.VERSION_CODES.O)
 @HiltViewModel
 class ResultViewModel @Inject constructor(
-    private val db: AppDatabase
+    private val db: AppDatabase,
+    private val networkRepository: NetworkRepository
 ) : ViewModel() {
+
     private val _state = MutableStateFlow(ResultScreenState())
     val state: StateFlow<ResultScreenState> = _state.asStateFlow()
 
@@ -33,58 +36,57 @@ class ResultViewModel @Inject constructor(
 
     fun onIntent(intent: ResultScreenIntent) {
         when (intent) {
+
             is ResultScreenIntent.LoadData -> {
                 viewModelScope.launch {
                     _state.update { it.copy(isLoading = true) }
-                    val symptoms = db.symptomDao().getAllSymptoms()
+
+                    val symptoms  = db.symptomDao().getAllSymptoms()
                     val diagnosis = symptoms.lastOrNull { it.patientId == intent.userId }
-                    val rules = db.ruleDao().getAllRules()
+                    val rules     = db.ruleDao().getAllRules()
+
+                    val nnProb: Int? = if (diagnosis != null) {
+                        diagnosis.nnProbability
+                            ?: networkRepository.predict(
+                                diagnosis.userInput.split(". ").filter { it.isNotBlank() }
+                            )?.let { (it * 100).toInt() }
+                    } else null
 
                     if (diagnosis != null && rules.isNotEmpty()) {
-                        val userSymptoms = diagnosis.userInput.split(". ").filter { it.isNotBlank() }
-                        val medicalTerms = diagnosis.medicalTerm?.split(", ")?.filter { it.isNotBlank() } ?: emptyList()
+                        val userSymptoms  = diagnosis.userInput.split(". ").filter { it.isNotBlank() }
+                        val medicalTerms  = diagnosis.medicalTerm?.split(", ")?.filter { it.isNotBlank() }
+                            ?: emptyList()
 
-                        val recognizedSymptoms = mutableListOf<String>()
-                        val unrecognizedSymptoms = mutableListOf<String>()
-                        val recognizedMedicalTerms = mutableListOf<String>()
+                        val recognized   = mutableListOf<String>()
+                        val unrecognized = mutableListOf<String>()
+                        val recTerms     = mutableListOf<String>()
 
-                        userSymptoms.forEach { userSymptom ->
-                            val matchingRule = rules.find { rule ->
-                                userSymptom.contains(rule.symptomKey, ignoreCase = true)
-                            }
-                            if (matchingRule != null) {
-                                val possibleTerms = mutableListOf(matchingRule.medicalTerm)
-                                matchingRule.answerTriggers?.split(";")?.forEach {
-                                    val term = it.split("=").getOrNull(1)
-                                    if (term != null) possibleTerms.add(term)
-                                }
-                                val isRecognized = medicalTerms.any { term ->
-                                    possibleTerms.contains(term)
-                                }
-                                if (isRecognized) {
-                                    recognizedSymptoms.add(userSymptom)
-                                    val recognizedTerm = medicalTerms.find { term ->
-                                        possibleTerms.contains(term)
+                        userSymptoms.forEach { s ->
+                            val match = rules.find { s.contains(it.symptomKey, ignoreCase = true) }
+                            if (match != null) {
+                                val possible = buildList {
+                                    add(match.medicalTerm)
+                                    match.answerTriggers?.split(";")?.forEach { t ->
+                                        t.split("=").getOrNull(1)?.let { add(it) }
                                     }
-                                    if (recognizedTerm != null) {
-                                        recognizedMedicalTerms.add(recognizedTerm)
-                                    }
-                                } else {
-                                    unrecognizedSymptoms.add(userSymptom)
                                 }
+                                val term = medicalTerms.find { it in possible }
+                                if (term != null) { recognized.add(s); recTerms.add(term) }
+                                else unrecognized.add(s)
                             } else {
-                                unrecognizedSymptoms.add(userSymptom)
+                                unrecognized.add(s)
                             }
                         }
 
                         _state.update {
                             it.copy(
-                                diagnosis = diagnosis,
-                                rules = rules,
-                                recognizedSymptoms = recognizedSymptoms,
-                                unrecognizedSymptoms = unrecognizedSymptoms,
-                                recognizedMedicalTerms = recognizedMedicalTerms,
-                                isLoading = false
+                                diagnosis              = diagnosis,
+                                rules                  = rules,
+                                recognizedSymptoms     = recognized,
+                                unrecognizedSymptoms   = unrecognized,
+                                recognizedMedicalTerms = recTerms,
+                                nnProbability          = nnProb,
+                                isLoading              = false
                             )
                         }
                     } else {
@@ -92,157 +94,156 @@ class ResultViewModel @Inject constructor(
                     }
                 }
             }
-            is ResultScreenIntent.EditSymptom -> {
+
+            is ResultScreenIntent.EditSymptom ->
                 _state.update {
                     it.copy(
-                        showDialog = true,
+                        showDialog      = true,
                         selectedSymptom = intent.symptom,
-                        editedSymptom = intent.symptom,
-                        suggestions = emptyList()
+                        editedSymptom   = intent.symptom,
+                        suggestions     = emptyList()
                     )
                 }
-            }
+
             is ResultScreenIntent.UpdateEditedSymptom -> {
                 val suggestions = if (intent.editedSymptom.isNotBlank()) {
-                    _state.value.rules
-                        .filter { rule ->
-                            rule.symptomKey.contains(intent.editedSymptom, ignoreCase = true) ||
-                                    rule.medicalTerm.contains(intent.editedSymptom, ignoreCase = true)
-                        }
-                        .map { rule -> rule.symptomKey }
-                        .distinct()
-                } else {
-                    emptyList()
-                }
-                _state.update {
-                    it.copy(
-                        editedSymptom = intent.editedSymptom,
-                        suggestions = suggestions
-                    )
-                }
+                    _state.value.rules.filter {
+                        it.symptomKey.contains(intent.editedSymptom, ignoreCase = true) ||
+                                it.medicalTerm.contains(intent.editedSymptom, ignoreCase = true)
+                    }.map { it.symptomKey }.distinct()
+                } else emptyList()
+                _state.update { it.copy(editedSymptom = intent.editedSymptom, suggestions = suggestions) }
             }
-            is ResultScreenIntent.SelectSuggestion -> {
-                _state.update {
-                    it.copy(
-                        editedSymptom = intent.suggestion,
-                        suggestions = emptyList()
-                    )
-                }
-            }
+
+            is ResultScreenIntent.SelectSuggestion ->
+                _state.update { it.copy(editedSymptom = intent.suggestion, suggestions = emptyList()) }
+
             is ResultScreenIntent.SaveEditedSymptom -> {
-                val selectedSymptom = _state.value.selectedSymptom
-                val editedSymptom = _state.value.editedSymptom
+                val selected = _state.value.selectedSymptom
+                val edited   = _state.value.editedSymptom
                 val diagnosis = _state.value.diagnosis
-                val rules = _state.value.rules
+                val rules    = _state.value.rules
 
-                if (editedSymptom.isNotBlank() && editedSymptom != selectedSymptom && diagnosis != null) {
+                if (edited.isNotBlank() && edited != selected && diagnosis != null) {
                     viewModelScope.launch {
-                        val currentAnswers = mutableMapOf<String, MutableList<String>>()
-                        diagnosis.clarifyingAnswers?.split(";")?.filter { it.isNotBlank() }?.forEach { entry ->
-                            val (symptom, answersStr) = entry.split("=")
-                            currentAnswers[symptom] = answersStr.split(",").filter { it.isNotBlank() }.toMutableList()
+                        val updatedInput = diagnosis.userInput.replace(selected!!, edited)
+                        val updatedSymptoms = updatedInput.split(". ").filter { it.isNotBlank() }
+
+                        // Пересчитываем нейросетевую вероятность
+                        val newNnProb = networkRepository.predict(updatedSymptoms)
+                            ?.let { (it * 100).toInt() }
+
+                        val currentAnswers = buildAnswersMap(diagnosis.clarifyingAnswers)
+                        currentAnswers.remove(selected)
+
+                        val updatedDiagnoses = updatedSymptoms.map {
+                            diagnoseSymptomResult(it, rules, currentAnswers)
                         }
 
-                        val updatedUserInput = diagnosis.userInput.replace(selectedSymptom!!, editedSymptom)
-                        val updatedSymptoms = updatedUserInput.split(". ").filter { it.isNotBlank() }
-                        currentAnswers.remove(selectedSymptom)
-                        if (currentAnswers.containsKey(editedSymptom)) {
-                            currentAnswers.remove(editedSymptom)
-                        }
-
-                        val updatedDiagnoses = updatedSymptoms.map { symptom ->
-                            diagnoseSymptom(symptom, rules, currentAnswers)
-                        }
+                        val expertProb  = updatedDiagnoses.sumOf { it.probability }
+                        val finalProb   = if (newNnProb != null)
+                            ((expertProb + newNnProb) / 2).coerceIn(0, 100)
+                        else expertProb
 
                         val updatedDiagnosis = diagnosis.copy(
-                            userInput = updatedUserInput,
-                            medicalTerm = updatedDiagnoses.mapNotNull { it.medicalTerm }.joinToString(", "),
-                            probability = updatedDiagnoses.sumOf { it.probability },
+                            userInput         = updatedInput,
+                            medicalTerm       = updatedDiagnoses.mapNotNull { it.medicalTerm }
+                                .joinToString(", "),
+                            probability       = finalProb,
                             clarifyingAnswers = currentAnswers.entries
-                                .filter { it.value.any { answer -> answer.isNotBlank() } }
-                                .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" }
+                                .filter { it.value.any { a -> a.isNotBlank() } }
+                                .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
+                            nnProbability     = newNnProb
                         )
-
                         db.symptomDao().update(updatedDiagnosis)
 
-                        val matchingRule = rules.find { editedSymptom.contains(it.symptomKey, ignoreCase = true) }
-                        if (matchingRule != null && matchingRule.clarifyingQuestions != null) {
+                        val matchingRule = rules.find {
+                            edited.contains(it.symptomKey, ignoreCase = true)
+                        }
+                        if (matchingRule?.clarifyingQuestions != null) {
                             sharedViewModel.setData(updatedSymptoms, diagnosis.patientId, currentAnswers)
                             _state.update { it.copy(navigateToClarify = true, showDialog = false) }
                         } else {
-                            val userSymptoms = updatedUserInput.split(". ").filter { it.isNotBlank() }
-                            val medicalTerms = updatedDiagnosis.medicalTerm?.split(", ")?.filter { it.isNotBlank() } ?: emptyList()
-
-                            val recognizedSymptoms = mutableListOf<String>()
-                            val unrecognizedSymptoms = mutableListOf<String>()
-                            val recognizedMedicalTerms = mutableListOf<String>()
-
-                            userSymptoms.forEach { userSymptom ->
-                                val matchingRule = rules.find { rule ->
-                                    userSymptom.contains(rule.symptomKey, ignoreCase = true)
-                                }
-                                if (matchingRule != null) {
-                                    val possibleTerms = mutableListOf(matchingRule.medicalTerm)
-                                    matchingRule.answerTriggers?.split(";")?.forEach {
-                                        val term = it.split("=").getOrNull(1)
-                                        if (term != null) possibleTerms.add(term)
-                                    }
-                                    val isRecognized = medicalTerms.any { term ->
-                                        possibleTerms.contains(term)
-                                    }
-                                    if (isRecognized) {
-                                        recognizedSymptoms.add(userSymptom)
-                                        val recognizedTerm = medicalTerms.find { term ->
-                                            possibleTerms.contains(term)
-                                        }
-                                        if (recognizedTerm != null) {
-                                            recognizedMedicalTerms.add(recognizedTerm)
-                                        }
-                                    } else {
-                                        unrecognizedSymptoms.add(userSymptom)
-                                    }
-                                } else {
-                                    unrecognizedSymptoms.add(userSymptom)
-                                }
-                            }
-
-                            _state.update {
-                                it.copy(
-                                    diagnosis = updatedDiagnosis,
-                                    recognizedSymptoms = recognizedSymptoms,
-                                    unrecognizedSymptoms = unrecognizedSymptoms,
-                                    recognizedMedicalTerms = recognizedMedicalTerms,
-                                    showDialog = false
-                                )
-                            }
+                            // Пересчитываем отображение
+                            val recalcState = recalcDisplay(updatedDiagnosis, rules, newNnProb)
+                            _state.update { recalcState.copy(showDialog = false) }
                         }
                     }
                 } else {
                     _state.update { it.copy(showDialog = false) }
                 }
             }
-            is ResultScreenIntent.DismissDialog -> {
+
+            is ResultScreenIntent.DismissDialog ->
                 _state.update {
                     it.copy(
-                        showDialog = false,
+                        showDialog      = false,
                         selectedSymptom = null,
-                        editedSymptom = "",
-                        suggestions = emptyList()
+                        editedSymptom   = "",
+                        suggestions     = emptyList()
                     )
                 }
-            }
-            is ResultScreenIntent.NavigateBack -> {
+
+            is ResultScreenIntent.NavigateBack ->
                 _state.update { it.copy(navigateBack = true) }
-            }
-            is ResultScreenIntent.Logout -> {
+
+            is ResultScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }
-            }
-            is ResultScreenIntent.ResetNavigation -> {
+
+            is ResultScreenIntent.ResetNavigation ->
                 _state.update { it.copy(navigateBack = false, navigateToClarify = false) }
-            }
         }
     }
+
+    // ── Вспомогательные методы ─────────────────────────────────────────────────
+
+    private fun buildAnswersMap(raw: String?): MutableMap<String, MutableList<String>> {
+        val map = mutableMapOf<String, MutableList<String>>()
+        raw?.split(";")?.filter { it.isNotBlank() }?.forEach { entry ->
+            val (k, v) = entry.split("=")
+            map[k] = v.split(",").filter { it.isNotBlank() }.toMutableList()
+        }
+        return map
+    }
+
+    private fun recalcDisplay(
+        diag: my.diplom.aritmia.data.SymptomEntity,
+        rules: List<RuleEntity>,
+        nnProb: Int?
+    ): ResultScreenState {
+        val userSymptoms = diag.userInput.split(". ").filter { it.isNotBlank() }
+        val medTerms     = diag.medicalTerm?.split(", ")?.filter { it.isNotBlank() } ?: emptyList()
+
+        val recognized   = mutableListOf<String>()
+        val unrecognized = mutableListOf<String>()
+        val recTerms     = mutableListOf<String>()
+
+        userSymptoms.forEach { s ->
+            val match = rules.find { s.contains(it.symptomKey, ignoreCase = true) }
+            if (match != null) {
+                val possible = buildList {
+                    add(match.medicalTerm)
+                    match.answerTriggers?.split(";")?.forEach { t ->
+                        t.split("=").getOrNull(1)?.let { add(it) }
+                    }
+                }
+                val term = medTerms.find { it in possible }
+                if (term != null) { recognized.add(s); recTerms.add(term) }
+                else unrecognized.add(s)
+            } else unrecognized.add(s)
+        }
+
+        return _state.value.copy(
+            diagnosis              = diag,
+            recognizedSymptoms     = recognized,
+            unrecognizedSymptoms   = unrecognized,
+            recognizedMedicalTerms = recTerms,
+            nnProbability          = nnProb
+        )
+    }
 }
+
+// ── Вспомогательные функции ────────────────────────────────────────────────────
 
 data class DiagnosedSymptom(
     val userInput: String,
@@ -250,30 +251,21 @@ data class DiagnosedSymptom(
     val probability: Int
 )
 
-fun diagnoseSymptom(
+fun diagnoseSymptomResult(
     symptom: String,
     rules: List<RuleEntity>,
     answers: Map<String, List<String>>
 ): DiagnosedSymptom {
-    val matchingRule = rules.find { rule ->
-        symptom.contains(rule.symptomKey, ignoreCase = true)
-    }
-    return if (matchingRule != null) {
-        val baseTerm = matchingRule.medicalTerm
-        val probability = matchingRule.probabilityWeight
-        val answersForSymptom = answers[matchingRule.symptomKey]?.filter { it.isNotBlank() } ?: emptyList()
+    val match = rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
+        ?: return DiagnosedSymptom(symptom, null, 0)
 
-        val updatedTerm = if (answersForSymptom.isNotEmpty() && matchingRule.answerTriggers != null) {
-            matchingRule.answerTriggers.split(";").find { trigger ->
-                val triggerAnswer = trigger.split("=").firstOrNull()
-                answersForSymptom.any { answer -> answer.equals(triggerAnswer, ignoreCase = true) }
-            }?.split("=")?.getOrNull(1) ?: baseTerm
-        } else {
-            baseTerm
-        }
+    val answersForSymptom = answers[match.symptomKey]?.filter { it.isNotBlank() } ?: emptyList()
+    val updatedTerm = if (answersForSymptom.isNotEmpty() && match.answerTriggers != null) {
+        match.answerTriggers.split(";").find { trigger ->
+            val key = trigger.split("=").firstOrNull()
+            answersForSymptom.any { it.equals(key, ignoreCase = true) }
+        }?.split("=")?.getOrNull(1) ?: match.medicalTerm
+    } else match.medicalTerm
 
-        DiagnosedSymptom(symptom, updatedTerm, probability)
-    } else {
-        DiagnosedSymptom(symptom, null, 0)
-    }
+    return DiagnosedSymptom(symptom, updatedTerm, match.probabilityWeight)
 }
