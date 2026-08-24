@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
-import my.diplom.aritmia.diagnosis.DiseaseCatalog
+import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
@@ -24,7 +24,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ResultViewModel @Inject constructor(
     private val db: AppDatabase,
-    private val networkRepository: NetworkRepository
+    private val networkRepository: NetworkRepository,
+    private val diseaseNetworkRepository: DiseaseNetworkRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ResultScreenState())
@@ -82,11 +83,19 @@ class ResultViewModel @Inject constructor(
             if (diagnosis != null && rules.isNotEmpty()) {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
-                val diseaseCandidates = DiseaseCatalog.rank(
-                    symptoms = diagnosis.userInput.split(". ").filter { it.isNotBlank() },
-                    medicalTerms = diagnosis.medicalTerm?.split(", ")?.filter { it.isNotBlank() } ?: emptyList(),
+
+                val userComplaints = diagnosis.userInput.split(". ").filter { it.isNotBlank() }
+                val medicalTerms = diagnosis.medicalTerm
+                    ?.split(", ")
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList()
+
+                val diseaseCandidates = diseaseNetworkRepository.classify(
+                    complaints = userComplaints,
+                    medicalTerms = medicalTerms,
                     limit = 5
                 )
+
                 _state.update {
                     it.copy(
                         diagnosis = diagnosis,
@@ -147,9 +156,9 @@ class ResultViewModel @Inject constructor(
             } else {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(updatedDiagnosis.userInput, updatedDiagnosis.medicalTerm, rules)
-                val candidates = DiseaseCatalog.rank(
-                    updatedSymptoms,
-                    newMedTerms.split(", ").filter { it.isNotBlank() },
+                val candidates = diseaseNetworkRepository.classify(
+                    complaints = updatedSymptoms,
+                    medicalTerms = newMedTerms.split(", ").filter { it.isNotBlank() },
                     limit = 5
                 )
                 _state.update {
@@ -194,9 +203,15 @@ class ResultViewModel @Inject constructor(
                     }
                 }
                 val term = savedTerms.find { it in possible }
-                if (term != null) { recognized.add(s); recTerms.add(term) }
-                else unrecognized.add(s)
-            } else unrecognized.add(s)
+                if (term != null) {
+                    recognized.add(s)
+                    recTerms.add(term)
+                } else {
+                    unrecognized.add(s)
+                }
+            } else {
+                unrecognized.add(s)
+            }
         }
         return SymptomClassification(recognized, unrecognized, recTerms)
     }
@@ -205,8 +220,11 @@ class ResultViewModel @Inject constructor(
         val map = mutableMapOf<String, MutableList<String>>()
         raw?.split(";")?.filter { it.isNotBlank() }?.forEach { entry ->
             val parts = entry.split("=")
-            if (parts.size == 2) map[parts[0]] = parts[1].split(",")
-                .filter { it.isNotBlank() }.toMutableList()
+            if (parts.size == 2) {
+                map[parts[0]] = parts[1].split(",")
+                    .filter { it.isNotBlank() }
+                    .toMutableList()
+            }
         }
         return map
     }
