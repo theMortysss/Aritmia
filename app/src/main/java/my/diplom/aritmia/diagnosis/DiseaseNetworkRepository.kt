@@ -12,14 +12,15 @@ import kotlin.random.Random
  * Репозиторий многоклассовой сердечно-сосудистой модели.
  *
  * Приоритет: загрузить заранее обученную модель из assets/disease_model.json либо
- * из упорядоченных частей assets/disease_model/*.part. Если pretrained asset отсутствует
- * или несовместим, приложение остаётся работоспособным за счёт bootstrap fallback.
+ * финальные v2-части из assets/disease_model/. Если pretrained asset отсутствует или
+ * несовместим, приложение остаётся работоспособным за счёт bootstrap fallback.
  */
 class DiseaseNetworkRepository(private val context: Context) {
 
     companion object {
         private const val MODEL_ASSET = "disease_model.json"
         private const val MODEL_PARTS_DIR = "disease_model"
+        private const val MODEL_PART_PREFIX = "v2-"
         private const val MODEL_TYPE = "aritmia_symptom_multiclass_mlp"
         private const val FORMAT_VERSION = 1
     }
@@ -100,7 +101,7 @@ class DiseaseNetworkRepository(private val context: Context) {
         }
 
         val parts = context.assets.list(MODEL_PARTS_DIR)
-            ?.filter { it.endsWith(".part") }
+            ?.filter { it.startsWith(MODEL_PART_PREFIX) && it.endsWith(".part") }
             ?.sorted()
             .orEmpty()
         require(parts.isNotEmpty()) { "Pretrained disease model asset not found" }
