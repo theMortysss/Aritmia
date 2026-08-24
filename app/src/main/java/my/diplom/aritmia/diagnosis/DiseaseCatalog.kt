@@ -1,279 +1,91 @@
 package my.diplom.aritmia.diagnosis
 
-import kotlin.math.min
-import kotlin.math.roundToInt
-
 /**
- * Результат сопоставления введённых жалоб с профилем сердечно-сосудистого состояния.
- * matchPercent — не медицинская вероятность, а нормированная оценка совпадения симптомов.
+ * Выход многоклассовой модели. modelScorePercent — confidence модели после softmax,
+ * а не клинически откалиброванная вероятность диагноза.
  */
 data class DiseaseCandidate(
     val id: String,
     val name: String,
-    val matchPercent: Int,
+    val modelScorePercent: Int,
     val matchedSignals: List<String>
+) {
+    // Совместимость с существующим ResultScreen; теперь это softmax score модели.
+    val matchPercent: Int get() = modelScorePercent
+}
+
+data class SymptomConcept(
+    val id: String,
+    val label: String,
+    val aliases: List<String>
 )
 
-private data class DiseaseSignal(
-    val phrase: String,
-    val weight: Double
-)
-
-private data class DiseaseProfile(
+data class DiseaseDefinition(
     val id: String,
     val name: String,
-    val signals: List<DiseaseSignal>
+    val conceptWeights: Map<String, Double>
 )
 
-/**
- * Интерпретируемый слой предварительного ранжирования заболеваний.
- *
- * Он намеренно отделён от общей NN-оценки аритмических признаков: текущая нейросеть
- * обучается на синтетических примерах и имеет один выход, поэтому её значение нельзя
- * честно трактовать как вероятность конкретного диагноза.
- *
- * Профили ниже предназначены для учебного скринингового прототипа и требуют
- * клинической валидации перед любым реальным медицинским применением.
- */
 object DiseaseCatalog {
 
-    private fun s(phrase: String, weight: Double) = DiseaseSignal(phrase, weight)
-
-    private val profiles = listOf(
-        DiseaseProfile(
-            id = "atrial_fibrillation",
-            name = "Фибрилляция предсердий",
-            signals = listOf(
-                s("пульс нерегулярный", 1.0),
-                s("сердце бьется неровно", 1.0),
-                s("перебои в сердце", 0.95),
-                s("чувство перебоев", 0.9),
-                s("нерегулярный пульс", 1.0),
-                s("неровный ритм", 0.9),
-                s("одышка", 0.45),
-                s("голова кружится", 0.4),
-                s("слабость", 0.35)
-            )
-        ),
-        DiseaseProfile(
-            id = "supraventricular_tachycardia",
-            name = "Наджелудочковая тахикардия",
-            signals = listOf(
-                s("внезапная тахикардия", 1.0),
-                s("сердце колотится", 0.9),
-                s("пульс быстрый", 0.9),
-                s("сильное сердцебиение", 0.85),
-                s("учащённый пульс", 0.85),
-                s("сердцебиение в покое", 0.75),
-                s("голова кружится", 0.35),
-                s("чувство страха", 0.25)
-            )
-        ),
-        DiseaseProfile(
-            id = "extrasystole",
-            name = "Экстрасистолия",
-            signals = listOf(
-                s("сердце замирает", 1.0),
-                s("пульс пропадает", 0.95),
-                s("чувство перебоев", 0.9),
-                s("перебои в сердце", 0.85),
-                s("толчки в груди", 0.95),
-                s("пропуски ударов", 0.95),
-                s("ощущение замирания сердца", 1.0)
-            )
-        ),
-        DiseaseProfile(
-            id = "sinus_bradycardia",
-            name = "Брадикардия",
-            signals = listOf(
-                s("пульс редкий", 1.0),
-                s("сердце бьется редко", 1.0),
-                s("пульс меньше 60", 0.95),
-                s("брадикардия", 1.0),
-                s("слабость", 0.55),
-                s("голова кружится", 0.55),
-                s("обмороки", 0.65)
-            )
-        ),
-        DiseaseProfile(
-            id = "stable_angina",
-            name = "Ишемическая болезнь сердца / стенокардия",
-            signals = listOf(
-                s("боль за грудиной", 1.0),
-                s("боль в груди при нагрузке", 1.0),
-                s("сдавление при нагрузке", 0.95),
-                s("дискомфорт при нагрузке", 0.85),
-                s("тяжесть при нагрузке", 0.85),
-                s("давление в груди", 0.75),
-                s("одышка при ходьбе", 0.55),
-                s("боль отдает в руку", 0.75),
-                s("боль отдает в челюсть", 0.75)
-            )
-        ),
-        DiseaseProfile(
-            id = "acute_coronary_syndrome",
-            name = "Острый коронарный синдром / инфаркт миокарда",
-            signals = listOf(
-                s("боль за грудиной", 1.0),
-                s("сильная боль в груди", 1.0),
-                s("боль отдает в руку", 1.0),
-                s("боль отдает в челюсть", 1.0),
-                s("холодный пот", 0.85),
-                s("тошнота", 0.65),
-                s("сильная слабость", 0.65),
-                s("давление в груди", 0.75),
-                s("одышка", 0.6)
-            )
-        ),
-        DiseaseProfile(
-            id = "heart_failure",
-            name = "Хроническая сердечная недостаточность",
-            signals = listOf(
-                s("одышка лежа", 1.0),
-                s("просыпаюсь от удушья", 1.0),
-                s("одышка ночью", 0.95),
-                s("одышка при ходьбе", 0.85),
-                s("ноги отекают", 0.9),
-                s("отёки на ногах", 0.9),
-                s("отеки стоп", 0.85),
-                s("сильная слабость", 0.55),
-                s("усталость", 0.5)
-            )
-        ),
-        DiseaseProfile(
-            id = "arterial_hypertension",
-            name = "Артериальная гипертензия",
-            signals = listOf(
-                s("давление высокое", 1.0),
-                s("давление выше 140", 1.0),
-                s("повышенное артериальное давление", 1.0),
-                s("головная боль", 0.55),
-                s("голова кружится", 0.45),
-                s("чувство тяжести", 0.3),
-                s("сердцебиение", 0.3)
-            )
-        ),
-        DiseaseProfile(
-            id = "aortic_stenosis",
-            name = "Аортальный стеноз",
-            signals = listOf(
-                s("обморок при нагрузке", 1.0),
-                s("обмороки при нагрузке", 1.0),
-                s("боль в груди при нагрузке", 0.9),
-                s("одышка при нагрузке", 0.9),
-                s("одышка при ходьбе", 0.75),
-                s("голова кружится при нагрузке", 0.85),
-                s("шум в сердце", 0.75)
-            )
-        ),
-        DiseaseProfile(
-            id = "pericarditis",
-            name = "Перикардит",
-            signals = listOf(
-                s("боль усиливается лежа", 1.0),
-                s("боль уменьшается сидя", 1.0),
-                s("боль в груди при дыхании", 0.9),
-                s("боль при дыхании", 0.85),
-                s("жжение в груди", 0.4),
-                s("температура", 0.4),
-                s("слабость", 0.3)
-            )
-        ),
-        DiseaseProfile(
-            id = "dilated_cardiomyopathy",
-            name = "Дилатационная кардиомиопатия",
-            signals = listOf(
-                s("одышка при ходьбе", 0.85),
-                s("одышка лежа", 0.9),
-                s("ноги отекают", 0.8),
-                s("отеки стоп", 0.75),
-                s("сильная слабость", 0.6),
-                s("усталость", 0.5),
-                s("перебои в сердце", 0.55),
-                s("сердцебиение", 0.5)
-            )
-        ),
-        DiseaseProfile(
-            id = "sinus_tachycardia",
-            name = "Синусовая тахикардия",
-            signals = listOf(
-                s("пульс быстрый", 1.0),
-                s("учащённый пульс", 1.0),
-                s("сердце бьется сильно", 0.8),
-                s("сильное сердцебиение", 0.8),
-                s("сердцебиение при стрессе", 0.75),
-                s("тревога", 0.35),
-                s("потливость", 0.3)
-            )
-        )
+    val concepts: List<SymptomConcept> = listOf(
+        SymptomConcept("palpitations", "Сердцебиение", listOf("сердцебиение", "сердце колотится", "сильное сердцебиение", "чувствую сердцебиение", "сердце бьется сильно", "сердце сильно бьется")),
+        SymptomConcept("sudden_palpitations", "Внезапный приступ сердцебиения", listOf("внезапная тахикардия", "внезапное сердцебиение", "приступ сердцебиения", "сердце резко начинает колотиться", "сердце внезапно колотится")),
+        SymptomConcept("irregular_rhythm", "Нерегулярный ритм", listOf("пульс нерегулярный", "нерегулярный пульс", "сердце бьется неровно", "перебои в сердце", "чувство перебоев", "ритм неровный", "аритмия")),
+        SymptomConcept("skipped_beats", "Замирания / пропуски ударов", listOf("сердце замирает", "пульс пропадает", "пропуски ударов", "толчки в груди", "экстрасистолы", "ощущение замирания сердца")),
+        SymptomConcept("fast_pulse", "Учащённый пульс", listOf("пульс быстрый", "учащенный пульс", "учащённый пульс", "тахикардия", "пульс высокий", "частый пульс")),
+        SymptomConcept("slow_pulse", "Редкий пульс", listOf("пульс редкий", "редкий пульс", "сердце бьется редко", "пульс меньше 60", "брадикардия", "низкий пульс")),
+        SymptomConcept("chest_pain", "Боль в груди", listOf("боль в груди", "боль за грудиной", "боль в сердце", "кардиалгия")),
+        SymptomConcept("exertional_chest_pain", "Боль в груди при нагрузке", listOf("боль в груди при нагрузке", "боль за грудиной при нагрузке", "грудь болит при ходьбе", "боль появляется при нагрузке")),
+        SymptomConcept("pleuritic_chest_pain", "Боль в груди при дыхании", listOf("боль в груди при дыхании", "боль при вдохе", "боль усиливается при дыхании")),
+        SymptomConcept("positional_chest_pain", "Позиционная боль в груди", listOf("боль усиливается лежа", "боль уменьшается сидя", "легче сидя наклонившись", "боль зависит от положения тела")),
+        SymptomConcept("pain_radiation", "Иррадиация боли в руку / челюсть", listOf("боль отдает в руку", "боль отдаёт в руку", "боль отдает в левую руку", "боль отдаёт в левую руку", "боль отдает в челюсть", "боль отдаёт в челюсть")),
+        SymptomConcept("chest_pressure", "Сдавление / давление в груди", listOf("давление в груди", "грудь давит", "сдавление в груди", "чувство сдавления", "тяжесть в груди", "дискомфорт в груди")),
+        SymptomConcept("dyspnea", "Одышка / нехватка воздуха", listOf("одышка", "тяжело дышать", "не хватает воздуха", "чувство нехватки воздуха", "ощущение удушья", "задыхаюсь")),
+        SymptomConcept("exertional_dyspnea", "Одышка при нагрузке", listOf("одышка при нагрузке", "одышка при ходьбе", "задыхаюсь при ходьбе", "не хватает воздуха при нагрузке")),
+        SymptomConcept("orthopnea", "Одышка лёжа", listOf("одышка лежа", "одышка лёжа", "тяжело дышать лежа", "тяжело дышать лёжа", "задыхаюсь лежа", "задыхаюсь лёжа")),
+        SymptomConcept("nocturnal_dyspnea", "Ночная одышка / удушье", listOf("одышка ночью", "просыпаюсь от удушья", "просыпаюсь от одышки", "ночью не хватает воздуха", "пароксизмальная ночная одышка")),
+        SymptomConcept("edema", "Отёки ног", listOf("ноги отекают", "отёки на ногах", "отеки на ногах", "отеки стоп", "отёки стоп", "отеки лодыжек", "отёки лодыжек")),
+        SymptomConcept("syncope", "Обморок", listOf("обморок", "обмороки", "теряю сознание", "потеря сознания", "синкопе")),
+        SymptomConcept("exertional_syncope", "Обморок при нагрузке", listOf("обморок при нагрузке", "обмороки при нагрузке", "теряю сознание при нагрузке", "обморок во время ходьбы")),
+        SymptomConcept("dizziness", "Головокружение", listOf("голова кружится", "головокружение", "кружится голова", "предобморочное состояние")),
+        SymptomConcept("weakness", "Слабость", listOf("слабость", "сильная слабость", "выраженная слабость", "нет сил")),
+        SymptomConcept("fatigue", "Утомляемость", listOf("усталость", "утомляемость", "быстро устаю", "повышенная утомляемость")),
+        SymptomConcept("cold_sweat", "Холодный пот", listOf("холодный пот", "липкий пот", "внезапная потливость", "сильная потливость")),
+        SymptomConcept("nausea", "Тошнота", listOf("тошнота", "тошнит", "подташнивает")),
+        SymptomConcept("high_bp", "Повышенное давление", listOf("давление высокое", "высокое давление", "давление выше 140", "повышенное артериальное давление", "гипертония", "гипертензия")),
+        SymptomConcept("headache", "Головная боль", listOf("головная боль", "болит голова", "сильно болит голова")),
+        SymptomConcept("murmur", "Шум в сердце", listOf("шум в сердце", "сердечный шум", "врач слышал шум в сердце")),
+        SymptomConcept("fever", "Повышенная температура", listOf("температура", "лихорадка", "повышенная температура", "жар")),
+        SymptomConcept("anxiety", "Тревога / страх", listOf("тревога", "чувство страха", "паника", "страх", "тревожность"))
     )
 
-    fun rank(
-        symptoms: List<String>,
-        medicalTerms: List<String> = emptyList(),
-        limit: Int = 5
-    ): List<DiseaseCandidate> {
-        if (limit <= 0) return emptyList()
+    val definitions: List<DiseaseDefinition> = listOf(
+        DiseaseDefinition("atrial_fibrillation", "Фибрилляция предсердий", mapOf("irregular_rhythm" to 1.0, "palpitations" to 0.75, "dyspnea" to 0.55, "dizziness" to 0.45, "weakness" to 0.35, "fatigue" to 0.3)),
+        DiseaseDefinition("supraventricular_tachycardia", "Наджелудочковая тахикардия", mapOf("sudden_palpitations" to 1.0, "fast_pulse" to 0.95, "palpitations" to 0.9, "dizziness" to 0.45, "dyspnea" to 0.35, "anxiety" to 0.25)),
+        DiseaseDefinition("extrasystole", "Экстрасистолия", mapOf("skipped_beats" to 1.0, "irregular_rhythm" to 0.75, "palpitations" to 0.55, "anxiety" to 0.2)),
+        DiseaseDefinition("sinus_bradycardia", "Брадикардия", mapOf("slow_pulse" to 1.0, "weakness" to 0.65, "dizziness" to 0.65, "syncope" to 0.55, "fatigue" to 0.4)),
+        DiseaseDefinition("stable_angina", "Ишемическая болезнь сердца / стенокардия", mapOf("exertional_chest_pain" to 1.0, "chest_pressure" to 0.85, "chest_pain" to 0.75, "pain_radiation" to 0.7, "exertional_dyspnea" to 0.55, "dyspnea" to 0.35)),
+        DiseaseDefinition("acute_coronary_syndrome", "Острый коронарный синдром / инфаркт миокарда", mapOf("chest_pain" to 1.0, "chest_pressure" to 0.9, "pain_radiation" to 0.95, "cold_sweat" to 0.85, "nausea" to 0.65, "dyspnea" to 0.65, "weakness" to 0.55)),
+        DiseaseDefinition("heart_failure", "Хроническая сердечная недостаточность", mapOf("orthopnea" to 1.0, "nocturnal_dyspnea" to 0.95, "edema" to 0.9, "exertional_dyspnea" to 0.85, "dyspnea" to 0.65, "fatigue" to 0.55, "weakness" to 0.4)),
+        DiseaseDefinition("arterial_hypertension", "Артериальная гипертензия", mapOf("high_bp" to 1.0, "headache" to 0.5, "dizziness" to 0.4, "palpitations" to 0.25)),
+        DiseaseDefinition("aortic_stenosis", "Аортальный стеноз", mapOf("exertional_syncope" to 1.0, "exertional_chest_pain" to 0.9, "exertional_dyspnea" to 0.9, "murmur" to 0.8, "dizziness" to 0.45, "syncope" to 0.45)),
+        DiseaseDefinition("pericarditis", "Перикардит", mapOf("positional_chest_pain" to 1.0, "pleuritic_chest_pain" to 0.95, "chest_pain" to 0.7, "fever" to 0.45, "weakness" to 0.25)),
+        DiseaseDefinition("dilated_cardiomyopathy", "Дилатационная кардиомиопатия", mapOf("exertional_dyspnea" to 0.9, "orthopnea" to 0.85, "edema" to 0.8, "fatigue" to 0.65, "weakness" to 0.5, "palpitations" to 0.45, "irregular_rhythm" to 0.4)),
+        DiseaseDefinition("sinus_tachycardia", "Синусовая тахикардия", mapOf("fast_pulse" to 1.0, "palpitations" to 0.85, "anxiety" to 0.45, "weakness" to 0.3, "dizziness" to 0.25))
+    )
 
-        val inputs = (symptoms + medicalTerms)
-            .map(::normalize)
-            .filter { it.isNotBlank() }
-            .distinct()
+    private val diseaseById = definitions.associateBy { it.id }
+    private val conceptById = concepts.associateBy { it.id }
 
-        if (inputs.isEmpty()) return emptyList()
+    fun disease(id: String): DiseaseDefinition? = diseaseById[id]
+    fun concept(id: String): SymptomConcept? = conceptById[id]
 
-        return profiles.mapNotNull { profile ->
-            val matched = profile.signals.filter { signal ->
-                val normalizedSignal = normalize(signal.phrase)
-                inputs.any { input -> matches(input, normalizedSignal) }
-            }
-
-            if (matched.isEmpty()) return@mapNotNull null
-
-            // Нормируем относительно пяти наиболее информативных признаков профиля,
-            // чтобы один общий симптом не давал искусственно высокий процент.
-            val referenceWeight = profile.signals
-                .map { it.weight }
-                .sortedDescending()
-                .take(5)
-                .sum()
-                .coerceAtLeast(1.0)
-
-            val matchedWeight = matched.sumOf { it.weight }
-            val coverage = (matchedWeight / referenceWeight).coerceIn(0.0, 1.0)
-            val breadth = (matched.size.toDouble() / min(4, profile.signals.size))
-                .coerceIn(0.0, 1.0)
-            val score = ((coverage * 0.8 + breadth * 0.2) * 100.0)
-                .roundToInt()
-                .coerceIn(1, 100)
-
-            DiseaseCandidate(
-                id = profile.id,
-                name = profile.name,
-                matchPercent = score,
-                matchedSignals = matched.map { it.phrase }.distinct()
-            )
-        }
-            .sortedWith(
-                compareByDescending<DiseaseCandidate> { it.matchPercent }
-                    .thenByDescending { it.matchedSignals.size }
-                    .thenBy { it.name }
-            )
-            .take(limit)
-    }
-
-    private fun normalize(value: String): String = value
-        .lowercase()
-        .replace('ё', 'е')
-        .replace(Regex("[^а-яa-z0-9%+\\s-]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-
-    private fun matches(input: String, signal: String): Boolean {
-        if (input == signal) return true
-        if (input.contains(signal)) return true
-        // Позволяет распознавать короткую пользовательскую формулировку внутри
-        // более подробного сигнала, но отсекает слишком общие слова вроде «боль».
-        return input.length >= 6 && signal.contains(input)
+    fun explain(diseaseId: String, matchedConceptIds: Collection<String>): List<String> {
+        val disease = diseaseById[diseaseId] ?: return emptyList()
+        return matchedConceptIds
+            .filter { it in disease.conceptWeights }
+            .sortedByDescending { disease.conceptWeights[it] ?: 0.0 }
+            .mapNotNull { conceptById[it]?.label }
     }
 }
