@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Offline ML training artifacts
+/ml/data/
+/ml/out/
+/.venv/
