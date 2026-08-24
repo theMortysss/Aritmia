@@ -1,5 +1,6 @@
 package my.diplom.aritmia.diagnosis
 
+import kotlinx.serialization.Serializable
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.max
@@ -93,6 +94,22 @@ class DiseaseNeuralNetwork(
         }
     }
 
+    fun loadWeights(snapshot: DiseaseModelSnapshot) {
+        require(snapshot.weightsInputHidden.size == inputSize)
+        require(snapshot.weightsInputHidden.all { it.size == hiddenSize })
+        require(snapshot.biasHidden.size == hiddenSize)
+        require(snapshot.weightsHiddenOutput.size == hiddenSize)
+        require(snapshot.weightsHiddenOutput.all { it.size == outputSize })
+        require(snapshot.biasOutput.size == outputSize)
+
+        w1 = Array(inputSize) { i -> snapshot.weightsInputHidden[i].toDoubleArray() }
+        b1 = snapshot.biasHidden.toDoubleArray()
+        w2 = Array(hiddenSize) { h -> snapshot.weightsHiddenOutput[h].toDoubleArray() }
+        b2 = snapshot.biasOutput.toDoubleArray()
+        lastLoss = snapshot.metrics?.test?.macroF1?.let { 1.0 - it } ?: Double.NaN
+        lastEpochs = 0
+    }
+
     private fun forward(input: DoubleArray): Triple<DoubleArray, DoubleArray, DoubleArray> {
         val z1 = DoubleArray(hiddenSize) { h ->
             var value = b1[h]
@@ -120,4 +137,30 @@ class DiseaseNeuralNetwork(
 data class DiseaseTrainingSample(
     val input: DoubleArray,
     val labelIndex: Int
+)
+
+@Serializable
+data class DiseaseModelSnapshot(
+    val formatVersion: Int,
+    val modelType: String,
+    val inputConceptIds: List<String>,
+    val outputDiseaseIds: List<String>,
+    val hiddenSize: Int,
+    val activation: String,
+    val outputActivation: String,
+    val weightsInputHidden: List<List<Double>>,
+    val biasHidden: List<Double>,
+    val weightsHiddenOutput: List<List<Double>>,
+    val biasOutput: List<Double>,
+    val metrics: DiseaseModelMetrics? = null
+)
+
+@Serializable
+data class DiseaseModelMetrics(
+    val test: DiseaseModelTestMetrics? = null
+)
+
+@Serializable
+data class DiseaseModelTestMetrics(
+    val macroF1: Double? = null
 )
