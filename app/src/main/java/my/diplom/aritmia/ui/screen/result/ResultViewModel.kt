@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
+import my.diplom.aritmia.diagnosis.DiseaseCatalog
 import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
@@ -35,151 +36,137 @@ class ResultViewModel @Inject constructor(
 
     fun onIntent(intent: ResultScreenIntent) {
         when (intent) {
-
-            is ResultScreenIntent.LoadData -> {
-                viewModelScope.launch {
-                    _state.update { it.copy(isLoading = true) }
-
-                    val allSymptoms = db.symptomDao().getAllSymptoms()
-                    val diagnosis   = allSymptoms.lastOrNull { it.patientId == intent.userId }
-                    val rules       = db.ruleDao().getAllRules()
-
-                    val nnProb = diagnosis?.nnProbability
-                        ?: diagnosis?.let { d ->
-                            networkRepository.predict(
-                                d.userInput.split(". ").filter { it.isNotBlank() }
-                            )?.let { (it * 100).toInt().coerceIn(0, 100) }
-                        }
-
-                    if (diagnosis != null && rules.isNotEmpty()) {
-                        val (recognized, unrecognized, recTerms) =
-                            classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
-
-                        _state.update {
-                            it.copy(
-                                diagnosis              = diagnosis,
-                                rules                  = rules,
-                                recognizedSymptoms     = recognized,
-                                unrecognizedSymptoms   = unrecognized,
-                                recognizedMedicalTerms = recTerms,
-                                nnProbability          = nnProb,
-                                isLoading              = false
-                            )
-                        }
-                    } else {
-                        _state.update { it.copy(isLoading = false) }
-                    }
-                }
+            is ResultScreenIntent.LoadData -> loadData(intent.userId)
+            is ResultScreenIntent.EditSymptom -> _state.update {
+                it.copy(
+                    showDialog = true,
+                    selectedSymptom = intent.symptom,
+                    editedSymptom = intent.symptom,
+                    suggestions = emptyList()
+                )
             }
-
-            is ResultScreenIntent.EditSymptom ->
-                _state.update {
-                    it.copy(
-                        showDialog      = true,
-                        selectedSymptom = intent.symptom,
-                        editedSymptom   = intent.symptom,
-                        suggestions     = emptyList()
-                    )
-                }
-
             is ResultScreenIntent.UpdateEditedSymptom -> {
                 val suggestions = if (intent.editedSymptom.isNotBlank()) {
                     _state.value.rules.filter {
                         it.symptomKey.contains(intent.editedSymptom, ignoreCase = true) ||
-                                it.medicalTerm.contains(intent.editedSymptom, ignoreCase = true)
+                            it.medicalTerm.contains(intent.editedSymptom, ignoreCase = true)
                     }.map { it.symptomKey }.distinct()
                 } else emptyList()
                 _state.update { it.copy(editedSymptom = intent.editedSymptom, suggestions = suggestions) }
             }
-
             is ResultScreenIntent.SelectSuggestion ->
                 _state.update { it.copy(editedSymptom = intent.suggestion, suggestions = emptyList()) }
-
-            is ResultScreenIntent.SaveEditedSymptom -> {
-                val selected  = _state.value.selectedSymptom ?: return
-                val edited    = _state.value.editedSymptom
-                val diagnosis = _state.value.diagnosis ?: return
-                val rules     = _state.value.rules
-
-                if (edited.isBlank() || edited == selected) {
-                    _state.update { it.copy(showDialog = false) }
-                    return
-                }
-
-                viewModelScope.launch {
-                    val updatedInput    = diagnosis.userInput.replace(selected, edited)
-                    val updatedSymptoms = updatedInput.split(". ").filter { it.isNotBlank() }
-
-                    val newNnProb = networkRepository.predict(updatedSymptoms)
-                        ?.let { (it * 100).toInt().coerceIn(0, 100) }
-
-                    val answers = parseAnswers(diagnosis.clarifyingAnswers).toMutableMap()
-                    answers.remove(selected)
-
-                    val newMedTerms = updatedSymptoms.mapNotNull { s ->
-                        resolveSymptomTerm(s, rules, answers).medicalTerm
-                    }.joinToString(", ")
-
-                    val updatedDiagnosis = diagnosis.copy(
-                        userInput         = updatedInput,
-                        medicalTerm       = newMedTerms.ifBlank { null },
-                        probability       = newNnProb ?: diagnosis.probability,
-                        clarifyingAnswers = answers.entries
-                            .filter { it.value.any { a -> a.isNotBlank() } }
-                            .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
-                        nnProbability     = newNnProb
-                    )
-                    db.symptomDao().update(updatedDiagnosis)
-
-                    val matchingRule = rules.find { edited.contains(it.symptomKey, ignoreCase = true) }
-                    if (matchingRule?.clarifyingQuestions != null) {
-                        sharedViewModel.setData(updatedSymptoms, diagnosis.patientId, answers)
-                        _state.update { it.copy(navigateToClarify = true, showDialog = false) }
-                    } else {
-                        val (recognized, unrecognized, recTerms) =
-                            classifySymptoms(updatedDiagnosis.userInput, updatedDiagnosis.medicalTerm, rules)
-                        _state.update {
-                            it.copy(
-                                diagnosis              = updatedDiagnosis,
-                                recognizedSymptoms     = recognized,
-                                unrecognizedSymptoms   = unrecognized,
-                                recognizedMedicalTerms = recTerms,
-                                nnProbability          = newNnProb,
-                                showDialog             = false
-                            )
-                        }
-                    }
-                }
+            is ResultScreenIntent.SaveEditedSymptom -> saveEditedSymptom()
+            is ResultScreenIntent.DismissDialog -> _state.update {
+                it.copy(showDialog = false, selectedSymptom = null, editedSymptom = "", suggestions = emptyList())
             }
-
-            is ResultScreenIntent.DismissDialog ->
-                _state.update {
-                    it.copy(
-                        showDialog      = false,
-                        selectedSymptom = null,
-                        editedSymptom   = "",
-                        suggestions     = emptyList()
-                    )
-                }
-
-            is ResultScreenIntent.NavigateBack ->
-                _state.update { it.copy(navigateBack = true) }
-
-            is ResultScreenIntent.Logout ->
-                _state.update { it.copy(logout = true) }
-
+            is ResultScreenIntent.NavigateBack -> _state.update { it.copy(navigateBack = true) }
+            is ResultScreenIntent.Logout -> _state.update { it.copy(logout = true) }
             is ResultScreenIntent.ResetNavigation ->
                 _state.update { it.copy(navigateBack = false, navigateToClarify = false) }
         }
     }
 
-    // ── Вспомогательные ───────────────────────────────────────────────────────
+    private fun loadData(userId: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true) }
+            val allSymptoms = db.symptomDao().getAllSymptoms()
+            val diagnosis = allSymptoms.lastOrNull { it.patientId == userId }
+            val rules = db.ruleDao().getAllRules()
 
-    /**
-     * Разбивает симптомы на распознанные / нераспознанные.
-     * Логика: симптом «распознан» если нашёлся matching rule и
-     * его медицинский термин присутствует в сохранённом поле medicalTerm.
-     */
+            val nnProb = diagnosis?.nnProbability ?: diagnosis?.let { d ->
+                networkRepository.predict(d.userInput.split(". ").filter { it.isNotBlank() })
+                    ?.let { (it * 100).toInt().coerceIn(0, 100) }
+            }
+
+            if (diagnosis != null && rules.isNotEmpty()) {
+                val (recognized, unrecognized, recTerms) =
+                    classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
+                val diseaseCandidates = DiseaseCatalog.rank(
+                    symptoms = diagnosis.userInput.split(". ").filter { it.isNotBlank() },
+                    medicalTerms = diagnosis.medicalTerm?.split(", ")?.filter { it.isNotBlank() } ?: emptyList(),
+                    limit = 5
+                )
+                _state.update {
+                    it.copy(
+                        diagnosis = diagnosis,
+                        rules = rules,
+                        recognizedSymptoms = recognized,
+                        unrecognizedSymptoms = unrecognized,
+                        recognizedMedicalTerms = recTerms,
+                        diseaseCandidates = diseaseCandidates,
+                        nnProbability = nnProb,
+                        isLoading = false
+                    )
+                }
+            } else {
+                _state.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    private fun saveEditedSymptom() {
+        val selected = _state.value.selectedSymptom ?: return
+        val edited = _state.value.editedSymptom
+        val diagnosis = _state.value.diagnosis ?: return
+        val rules = _state.value.rules
+
+        if (edited.isBlank() || edited == selected) {
+            _state.update { it.copy(showDialog = false) }
+            return
+        }
+
+        viewModelScope.launch {
+            val updatedInput = diagnosis.userInput.replace(selected, edited)
+            val updatedSymptoms = updatedInput.split(". ").filter { it.isNotBlank() }
+            val newNnProb = networkRepository.predict(updatedSymptoms)
+                ?.let { (it * 100).toInt().coerceIn(0, 100) }
+
+            val answers = parseAnswers(diagnosis.clarifyingAnswers).toMutableMap()
+            answers.remove(selected)
+
+            val newMedTerms = updatedSymptoms.mapNotNull { s ->
+                resolveSymptomTerm(s, rules, answers).medicalTerm
+            }.joinToString(", ")
+
+            val updatedDiagnosis = diagnosis.copy(
+                userInput = updatedInput,
+                medicalTerm = newMedTerms.ifBlank { null },
+                probability = newNnProb ?: diagnosis.probability,
+                clarifyingAnswers = answers.entries
+                    .filter { it.value.any { a -> a.isNotBlank() } }
+                    .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
+                nnProbability = newNnProb
+            )
+            db.symptomDao().update(updatedDiagnosis)
+
+            val matchingRule = rules.find { edited.contains(it.symptomKey, ignoreCase = true) }
+            if (matchingRule?.clarifyingQuestions != null) {
+                sharedViewModel.setData(updatedSymptoms, diagnosis.patientId, answers)
+                _state.update { it.copy(navigateToClarify = true, showDialog = false) }
+            } else {
+                val (recognized, unrecognized, recTerms) =
+                    classifySymptoms(updatedDiagnosis.userInput, updatedDiagnosis.medicalTerm, rules)
+                val candidates = DiseaseCatalog.rank(
+                    updatedSymptoms,
+                    newMedTerms.split(", ").filter { it.isNotBlank() },
+                    limit = 5
+                )
+                _state.update {
+                    it.copy(
+                        diagnosis = updatedDiagnosis,
+                        recognizedSymptoms = recognized,
+                        unrecognizedSymptoms = unrecognized,
+                        recognizedMedicalTerms = recTerms,
+                        diseaseCandidates = candidates,
+                        nnProbability = newNnProb,
+                        showDialog = false
+                    )
+                }
+            }
+        }
+    }
+
     private data class SymptomClassification(
         val recognized: List<String>,
         val unrecognized: List<String>,
@@ -192,11 +179,10 @@ class ResultViewModel @Inject constructor(
         rules: List<RuleEntity>
     ): SymptomClassification {
         val userSymptoms = userInput.split(". ").filter { it.isNotBlank() }
-        val savedTerms   = medicalTermRaw?.split(", ")?.filter { it.isNotBlank() } ?: emptyList()
-
-        val recognized   = mutableListOf<String>()
+        val savedTerms = medicalTermRaw?.split(", ")?.filter { it.isNotBlank() } ?: emptyList()
+        val recognized = mutableListOf<String>()
         val unrecognized = mutableListOf<String>()
-        val recTerms     = mutableListOf<String>()
+        val recTerms = mutableListOf<String>()
 
         userSymptoms.forEach { s ->
             val rule = rules.find { s.contains(it.symptomKey, ignoreCase = true) }
@@ -210,9 +196,7 @@ class ResultViewModel @Inject constructor(
                 val term = savedTerms.find { it in possible }
                 if (term != null) { recognized.add(s); recTerms.add(term) }
                 else unrecognized.add(s)
-            } else {
-                unrecognized.add(s)
-            }
+            } else unrecognized.add(s)
         }
         return SymptomClassification(recognized, unrecognized, recTerms)
     }
