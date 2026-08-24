@@ -1,42 +1,116 @@
-# Источники данных для многоклассовой диагностики
+# Источники и обучение многоклассовой cardiovascular-модели
 
-## Что используется в приложении сейчас
+## Архитектура
 
-Мобильная модель принимает только свободно введённые жалобы. Текст нормализуется в компактный набор symptom-concepts, после чего многоклассовая MLP выдаёт softmax-распределение по поддерживаемым сердечно-сосудистым состояниям.
+Пользователь вводит только свободные жалобы. Android-слой `FreeTextSymptomExtractor` преобразует русский текст в 29 устойчивых symptom-concepts. Затем многоклассовая MLP выполняет:
 
-Текущая версия содержит bootstrap-обучение на вариативных комбинациях symptom-concepts, чтобы модель могла работать полностью офлайн сразу после установки. Это учебный baseline, а не клинически валидированная модель.
+`29 symptom concepts -> ReLU(36) -> cardiovascular classes -> softmax -> top-5`.
 
-## Датасеты, на которые рассчитана архитектура
+Никакие демографические признаки, лабораторные показатели, ЭКГ, холестерин или измеренное давление автоматически не добавляются в ML-вектор: модель должна работать именно от жалоб пользователя.
+
+## Внешние источники
 
 ### DDXPlus
 
 - Paper: https://arxiv.org/abs/2205.09148
 - NeurIPS: https://proceedings.neurips.cc/paper_files/paper/2022/hash/cae73a974390c0edd95ae7aeae09139c-Abstract.html
-- Repository/data documentation: https://github.com/mila-iqia/ddxplus
+- Official repository: https://github.com/mila-iqia/ddxplus
+- Hugging Face mirror: https://huggingface.co/datasets/aai530-group6/ddxplus
 
-DDXPlus содержит около 1.3 млн синтетических пациентов, ground-truth pathology, симптомы, antecedents и differential diagnosis. Датасет хорошо подходит для построения и проверки differential-diagnosis pipeline, но его классы и evidence-space шире текущей сердечно-сосудистой области приложения.
+DDXPlus содержит около 1.3 млн синтетических пациентов, 49 патологий, 110 evidence/symptom variables, ground-truth pathology и differential diagnosis. Для Aritmia используются только symptom/evidence признаки. Antecedents, age и sex в текущую модель не подаются.
+
+В DDXPlus точно присутствуют, среди прочего, `Atrial fibrillation`, `PSVT`, `Possible NSTEMI / STEMI` и `Myocarditis`. Он не покрывает все 12 классов Aritmia, поэтому один DDXPlus не должен использоваться как основание заявлять, что все 12 классов обучены на реальных строках этого датасета.
 
 ### Symptom-to-Disease 820
 
 - Kaggle: https://www.kaggle.com/datasets/badhanamitroy/symptom-to-disease-descriptions-820-cleaned
 
-Содержит 820 заболеваний, 654 бинарных симптома и 190672 строк symptom-disease matrix. Подходит для supervised multi-class classification и отбора сердечно-сосудистого subset.
+Набор содержит широкий symptom-to-disease space и полезен как второй источник для классов, которых нет в DDXPlus. Перед использованием обязательно проверяются названия классов, class balance и provenance конкретной версии датасета.
 
 ### Symptom2Disease
 
 - Kaggle: https://www.kaggle.com/datasets/niyarrbarman/symptom2disease
-- Hugging Face mirror: https://huggingface.co/datasets/NeuronZero/Symptom2Disease
+- Hugging Face: https://huggingface.co/datasets/NeuronZero/Symptom2Disease
 
-1200 естественно-языковых описаний жалоб для 24 заболеваний. Кардиологических классов мало, поэтому как основной датасет он недостаточен, но полезен для тестирования слоя free-text -> symptom concepts / disease.
+Набор содержит естественно-языковые описания жалоб. Кардиологических классов мало, поэтому он полезнее для проверки free-text/NLP слоя, чем как основной cardiovascular training set.
 
-## Рекомендуемый следующий шаг
+## Offline training pipeline
 
-1. Скачать DDXPlus и/или 820-disease dataset вне Android-приложения.
-2. Оставить только сердечно-сосудистые классы, которые поддерживает DiseaseCatalog.
-3. Сопоставить исходные symptoms/evidences с `SymptomConcept.id`.
-4. Сформировать train/validation/test split по пациентам/строкам.
-5. Обучить модель офлайн в Python и измерить macro-F1, top-1 accuracy, top-5 recall и calibration.
-6. Экспортировать фиксированные веса в приложение вместо обучения на телефоне.
-7. Отдельно протестировать русские свободные формулировки жалоб на собственном validation-наборе.
+Код находится в `ml/train_cardiovascular.py`.
 
-Важно: softmax score внутри приложения является относительной уверенностью модели между поддерживаемыми классами и без отдельной calibration/clinical validation не должен называться медицинской вероятностью диагноза.
+Установка:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate              # Windows: .venv\\Scripts\\activate
+pip install -r ml/requirements.txt
+```
+
+### Обучение на DDXPlus
+
+После скачивания официальных файлов:
+
+```bash
+python ml/train_cardiovascular.py \
+  --ddxplus-csv data/ddxplus/train.csv \
+  --ddxplus-csv data/ddxplus/validate.csv \
+  --ddxplus-csv data/ddxplus/test.csv \
+  --ddxplus-evidences data/ddxplus/release_evidences.json \
+  --output app/src/main/assets/disease_model.json \
+  --metrics ml/out/metrics.json
+```
+
+Скрипт читает только `PATHOLOGY` и `EVIDENCES`, переводит evidence IDs/values через `release_evidences.json` и сопоставляет их с теми же 29 concepts, что использует Android.
+
+### Добавление symptom-to-disease CSV
+
+Можно совместить источники:
+
+```bash
+python ml/train_cardiovascular.py \
+  --ddxplus-csv data/ddxplus/train.csv \
+  --ddxplus-evidences data/ddxplus/release_evidences.json \
+  --symptom-matrix data/symptom820/data.csv \
+  --output app/src/main/assets/disease_model.json \
+  --metrics ml/out/metrics.json
+```
+
+Для symptom-matrix импортёр автоматически ищет колонку `disease`, `diagnosis`, `condition`, `prognosis`, `pathology` или `label`, затем использует только строки классов, которые явно сопоставлены с cardiovascular-классами Aritmia.
+
+## Что экспортируется
+
+`disease_model.json` содержит:
+
+- точный порядок 29 `inputConceptIds`;
+- список реально представленных `outputDiseaseIds`;
+- веса input -> hidden;
+- bias hidden;
+- веса hidden -> output;
+- bias output;
+- validation/test metrics.
+
+Android проверяет формат, порядок входов и IDs классов перед загрузкой. Если asset корректен, обучение на телефоне вообще не выполняется. Если asset отсутствует/повреждён, включается старый bootstrap fallback только для разработки.
+
+## Метрики
+
+Пайплайн создаёт stratified train/validation/test split и считает:
+
+- top-1 accuracy;
+- top-5 accuracy;
+- macro-F1;
+- classification report по каждому представленному классу.
+
+Для дипломной оценки дополнительно рекомендуется построить confusion matrix и проверить calibration (например, Expected Calibration Error / reliability diagram). Softmax confidence без calibration и клинической валидации нельзя называть медицинской вероятностью диагноза.
+
+## Важное ограничение свободного текста
+
+Нейросеть обучается не напрямую на русских предложениях, а на 29 symptom-concepts. Это осознанно: внешний датасет может быть англоязычным, а пользователь пишет по-русски. Один и тот же концепт связывает обе стороны:
+
+`"сердце внезапно начинает колотиться" -> sudden_palpitations <- "sudden palpitations"`.
+
+Поэтому качество всей системы состоит из двух независимых частей:
+
+1. recall/precision `FreeTextSymptomExtractor` на русских жалобах;
+2. качество disease classifier на корректно извлечённых concepts.
+
+Обе части нужно валидировать отдельно.
