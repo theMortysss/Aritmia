@@ -81,11 +81,11 @@ fun ResultScreen(
                 )
 
                 DiseaseCandidatesCard(state.diseaseCandidates)
-                NnProbabilityCard(nnProbability = state.nnProbability)
+                LegacyAritmiaScoreCard(nnProbability = state.nnProbability)
 
                 val screeningScore = maxOf(
                     state.nnProbability ?: state.diagnosis!!.probability,
-                    state.diseaseCandidates.firstOrNull()?.matchPercent ?: 0
+                    state.diseaseCandidates.firstOrNull()?.modelScorePercent ?: 0
                 )
                 if (screeningScore >= 60) RecommendationsCard()
 
@@ -204,15 +204,15 @@ private fun SymptomsCard(
 private fun DiseaseCandidatesCard(candidates: List<DiseaseCandidate>) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Топ возможных состояний", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Топ-5 возможных сердечно-сосудистых состояний", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Рейтинг показывает совпадение введённых признаков с профилями заболеваний. Это не диагноз и не клиническая вероятность.",
+                "Свободные жалобы преобразуются в симптом-признаки и подаются в многоклассовую MLP с softmax. Проценты ниже — относительная уверенность модели между поддерживаемыми классами, а не клинически откалиброванная вероятность диагноза.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             if (candidates.isEmpty()) {
-                Text("Недостаточно специфичных признаков для ранжирования.")
+                Text("Модель не смогла извлечь достаточно сердечно-сосудистых признаков из введённых жалоб.")
             } else {
                 candidates.forEachIndexed { index, candidate ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -222,16 +222,16 @@ private fun DiseaseCandidatesCard(candidates: List<DiseaseCandidate>) {
                                 modifier = Modifier.weight(1f),
                                 fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium
                             )
-                            Text("${candidate.matchPercent}%", fontWeight = FontWeight.Bold)
+                            Text("${candidate.modelScorePercent}%", fontWeight = FontWeight.Bold)
                         }
                         LinearProgressIndicator(
-                            progress = { candidate.matchPercent / 100f },
+                            progress = { candidate.modelScorePercent / 100f },
                             modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(50)),
                             strokeCap = StrokeCap.Round
                         )
                         if (candidate.matchedSignals.isNotEmpty()) {
                             Text(
-                                "Совпали признаки: ${candidate.matchedSignals.take(3).joinToString(", ")}",
+                                "Учтённые признаки: ${candidate.matchedSignals.take(4).joinToString(", ")}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -244,12 +244,12 @@ private fun DiseaseCandidatesCard(candidates: List<DiseaseCandidate>) {
 }
 
 @Composable
-private fun NnProbabilityCard(nnProbability: Int?) {
+private fun LegacyAritmiaScoreCard(nnProbability: Int?) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Общая оценка аритмических признаков", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Дополнительная оценка аритмических признаков", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Текущая MLP имеет один выход и оценивает общий аритмический паттерн, а не конкретное заболевание.",
+                "Это результат прежней бинарной MLP. Он оставлен как дополнительный сигнал и не участвует в выборе конкретного диагноза из топ-5.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -261,7 +261,7 @@ private fun NnProbabilityCard(nnProbability: Int?) {
                     label = "nn_progress"
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Нейронная сеть (MLP)")
+                    Text("Бинарная MLP")
                     Text("$nnProbability%", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = color)
                 }
                 LinearProgressIndicator(
