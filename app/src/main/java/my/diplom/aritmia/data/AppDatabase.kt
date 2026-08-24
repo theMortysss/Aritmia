@@ -91,6 +91,9 @@ interface UserDao {
     @Query("SELECT * FROM User WHERE id = :id AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientById(id: Int): User?
 
+    @Query("SELECT * FROM User WHERE id = :id AND role = :role LIMIT 1")
+    suspend fun getUserByIdAndRole(id: Int, role: Role): User?
+
     @Query("SELECT * FROM User WHERE phone = :phone AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientByPhone(phone: String): User?
 
@@ -147,7 +150,7 @@ interface SymptomDao {
     """)
     suspend fun getFilteredCount(
         phoneFilter: String, nameFilter: String, minProbability: Int,
-        startDate: String?, endDate: String?
+        startDate: String?, endDate: String?, limit: Int, offset: Int
     ): Int
 
     @Query("SELECT * FROM SymptomEntity WHERE patientId = :patientId")
