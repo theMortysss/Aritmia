@@ -54,10 +54,14 @@ class AritmiaApp : Application() {
     }
 
     private suspend fun initializeDatabase() {
-        val rules = appDatabase.ruleDao().getAllRules()
-        if (rules.isEmpty()) {
-            getInitialRules().forEach { appDatabase.ruleDao().insert(it) }
-        }
+        // Добавляем только отсутствующие стандартные правила. Это позволяет обновить
+        // уже существующую БД и при этом не перетирать правила, изменённые врачом/админом.
+        val existingKeys = appDatabase.ruleDao().getAllRules()
+            .map { it.symptomKey.trim().lowercase() }
+            .toSet()
+        getInitialRules()
+            .filter { it.symptomKey.trim().lowercase() !in existingKeys }
+            .forEach { appDatabase.ruleDao().insert(it) }
 
         // Тестовый bootstrap-администратор создаётся только в debug-сборке.
         // В release учётная запись администратора должна быть подготовлена отдельно.
