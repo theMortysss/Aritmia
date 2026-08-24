@@ -7,14 +7,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.User
+import my.diplom.aritmia.security.PasswordHasher
 import my.diplom.aritmia.ui.screen.login.model.LoginScreenIntent
 import my.diplom.aritmia.ui.screen.login.model.LoginScreenState
 import my.diplom.aritmia.utils.formatPhoneNumber
@@ -65,127 +68,132 @@ class LoginViewModel @Inject constructor(
             is LoginScreenIntent.UpdateRole -> {
                 _state.update { it.copy(role = intent.role, errorMessage = null) }
             }
-            is LoginScreenIntent.Login -> {
-                val phone = _state.value.phone
-                val password = _state.value.password
-                val selectedRole = _state.value.role
+            is LoginScreenIntent.Login -> login()
+            is LoginScreenIntent.Register -> register()
+        }
+    }
 
-                if (phone.length != 10) {
-                    _state.update { it.copy(errorMessage = "Телефон должен содержать ровно 10 цифр") }
-                    return
-                }
-                val formattedPhone = formatPhoneNumber(phone)
-                if (password.length < 6) {
-                    _state.update { it.copy(errorMessage = "Пароль должен содержать минимум 6 символов") }
-                    return
-                }
+    private fun login() {
+        val phone = _state.value.phone
+        val password = _state.value.password
+        val selectedRole = _state.value.role
 
-                viewModelScope.launch {
-                    val adminUser = db.userDao().getAdminByPhoneAndPassword(formattedPhone, password)
-                    if (adminUser != null) {
-                        val sharedPreferences = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                        with(sharedPreferences.edit()) {
-                            putInt("current_admin_id", adminUser.id)
-                            apply()
-                        }
-                        _state.update { it.copy(loginSuccess = adminUser, errorMessage = null) }
-                        return@launch
-                    }
+        if (phone.length != 10) {
+            _state.update { it.copy(errorMessage = "Телефон должен содержать ровно 10 цифр") }
+            return
+        }
+        if (password.length < 6) {
+            _state.update { it.copy(errorMessage = "Пароль должен содержать минимум 6 символов") }
+            return
+        }
 
-                    val user = when (selectedRole) {
-                        Role.PATIENT -> db.userDao().getPatientByPhoneAndPassword(formattedPhone, password)
-                        Role.DOCTOR -> db.userDao().getDoctorByPhoneAndPassword(formattedPhone, password)
-                        else -> null
-                    }
-                    if (user != null) {
-                        val sharedPreferences = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                        with(sharedPreferences.edit()) {
-                            when (selectedRole) {
-                                Role.PATIENT -> putInt("current_patient_id", user.id)
-                                Role.DOCTOR -> putInt("current_doctor_id", user.id)
-                                else -> { }
-                            }
-                            apply()
-                        }
-                        _state.update { it.copy(loginSuccess = user, errorMessage = null) }
-                    } else {
-                        _state.update { it.copy(errorMessage = "Неверный телефон или пароль") }
-                    }
-                }
+        val formattedPhone = formatPhoneNumber(phone)
+        viewModelScope.launch {
+            // Администратор по-прежнему может войти независимо от выбранной вкладки.
+            val admin = db.userDao().getUserByPhoneAndRole(formattedPhone, Role.ADMIN)
+            if (admin != null && verifyAndUpgradePassword(admin, password)) {
+                saveSession(admin)
+                _state.update { it.copy(loginSuccess = admin, errorMessage = null) }
+                return@launch
             }
-            is LoginScreenIntent.Register -> {
-                val fullName = _state.value.fullName.trim()
-                val phone = _state.value.phone
-                val age = _state.value.age
-                val password = _state.value.password
-                val role = _state.value.role
 
-                if (role == Role.ADMIN) {
-                    _state.update { it.copy(errorMessage = "Регистрация администраторов запрещена") }
-                    return
-                }
+            val user = if (selectedRole != Role.ADMIN) {
+                db.userDao().getUserByPhoneAndRole(formattedPhone, selectedRole)
+            } else null
 
-                if (role == Role.DOCTOR) {
-                    _state.update { it.copy(errorMessage = "Регистрация врачей запрещена") }
-                    return
-                }
-
-                if (!fullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*\$"))) {
-                    _state.update { it.copy(errorMessage = "ФИО должно содержать только буквы, слова с заглавной буквы") }
-                    return
-                }
-                if (phone.length != 10) {
-                    _state.update { it.copy(errorMessage = "Телефон должен содержать ровно 10 цифр") }
-                    return
-                }
-                val formattedPhone = formatPhoneNumber(phone)
-                if (role == Role.PATIENT && (age.toIntOrNull() ?: 0) !in 1..150) {
-                    _state.update { it.copy(errorMessage = "Возраст должен быть от 1 до 150") }
-                    return
-                }
-                if (password.length < 6) {
-                    _state.update { it.copy(errorMessage = "Пароль должен содержать минимум 6 символов") }
-                    return
-                }
-
-                viewModelScope.launch {
-                    val existingUserWithSameRole = db.userDao().getAllUsers().find {
-                        it.phone == formattedPhone && it.role == role
-                    }
-                    if (existingUserWithSameRole != null) {
-                        _state.update { it.copy(errorMessage = "Пользователь с таким номером и ролью уже существует") }
-                        return@launch
-                    }
-
-                    val newUser = User(
-                        phone = formattedPhone,
-                        fullName = fullName,
-                        password = password,
-                        role = role,
-                        gender = if (role == Role.PATIENT) _state.value.gender else null,
-                        age = if (role == Role.PATIENT) age.toIntOrNull() else null,
-                        specialty = if (role == Role.DOCTOR) _state.value.specialty else null
-                    )
-                    db.userDao().insert(newUser)
-                    val insertedUser = when (role) {
-                        Role.PATIENT -> db.userDao().getPatientByPhone(formattedPhone)
-                        Role.DOCTOR -> null
-                        Role.ADMIN -> null
-                    }
-                    if (insertedUser != null) {
-                        val sharedPreferences = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                        with(sharedPreferences.edit()) {
-                            when (role) {
-                                Role.PATIENT -> putInt("current_patient_id", insertedUser.id)
-                                Role.DOCTOR -> { }
-                                Role.ADMIN -> { }
-                            }
-                            apply()
-                        }
-                        _state.update { it.copy(loginSuccess = insertedUser, errorMessage = null) }
-                    }
-                }
+            if (user != null && verifyAndUpgradePassword(user, password)) {
+                saveSession(user)
+                _state.update { it.copy(loginSuccess = user, errorMessage = null) }
+            } else {
+                _state.update { it.copy(errorMessage = "Неверный телефон или пароль") }
             }
+        }
+    }
+
+    private fun register() {
+        val fullName = _state.value.fullName.trim()
+        val phone = _state.value.phone
+        val age = _state.value.age
+        val password = _state.value.password
+        val role = _state.value.role
+
+        if (role == Role.ADMIN) {
+            _state.update { it.copy(errorMessage = "Регистрация администраторов запрещена") }
+            return
+        }
+        if (role == Role.DOCTOR) {
+            _state.update { it.copy(errorMessage = "Регистрация врачей запрещена") }
+            return
+        }
+        if (!fullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*\$"))) {
+            _state.update { it.copy(errorMessage = "ФИО должно содержать только буквы, слова с заглавной буквы") }
+            return
+        }
+        if (phone.length != 10) {
+            _state.update { it.copy(errorMessage = "Телефон должен содержать ровно 10 цифр") }
+            return
+        }
+        val formattedPhone = formatPhoneNumber(phone)
+        if (role == Role.PATIENT && (age.toIntOrNull() ?: 0) !in 1..150) {
+            _state.update { it.copy(errorMessage = "Возраст должен быть от 1 до 150") }
+            return
+        }
+        if (password.length < 6) {
+            _state.update { it.copy(errorMessage = "Пароль должен содержать минимум 6 символов") }
+            return
+        }
+
+        viewModelScope.launch {
+            val existingUserWithSameRole = db.userDao().getUserByPhoneAndRole(formattedPhone, role)
+            if (existingUserWithSameRole != null) {
+                _state.update { it.copy(errorMessage = "Пользователь с таким номером и ролью уже существует") }
+                return@launch
+            }
+
+            val passwordHash = withContext(Dispatchers.Default) { PasswordHasher.hash(password) }
+            val newUser = User(
+                phone = formattedPhone,
+                fullName = fullName,
+                password = passwordHash,
+                role = role,
+                gender = if (role == Role.PATIENT) _state.value.gender else null,
+                age = if (role == Role.PATIENT) age.toIntOrNull() else null,
+                specialty = if (role == Role.DOCTOR) _state.value.specialty else null
+            )
+            db.userDao().insert(newUser)
+            val insertedUser = db.userDao().getUserByPhoneAndRole(formattedPhone, role)
+            if (insertedUser != null) {
+                saveSession(insertedUser)
+                _state.update { it.copy(loginSuccess = insertedUser, errorMessage = null) }
+            }
+        }
+    }
+
+    private suspend fun verifyAndUpgradePassword(user: User, password: String): Boolean {
+        val matches = withContext(Dispatchers.Default) {
+            PasswordHasher.verify(password, user.password)
+        }
+        if (!matches) return false
+
+        if (PasswordHasher.needsRehash(user.password)) {
+            val upgraded = withContext(Dispatchers.Default) { PasswordHasher.hash(password) }
+            db.userDao().update(user.copy(password = upgraded))
+        }
+        return true
+    }
+
+    private fun saveSession(user: User) {
+        val prefs = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        with(prefs.edit()) {
+            remove("current_patient_id")
+            remove("current_doctor_id")
+            remove("current_admin_id")
+            when (user.role) {
+                Role.PATIENT -> putInt("current_patient_id", user.id)
+                Role.DOCTOR -> putInt("current_doctor_id", user.id)
+                Role.ADMIN -> putInt("current_admin_id", user.id)
+            }
+            apply()
         }
     }
 }
