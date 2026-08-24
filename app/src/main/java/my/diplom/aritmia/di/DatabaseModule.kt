@@ -37,5 +37,7 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideDiseaseNetworkRepository(): DiseaseNetworkRepository = DiseaseNetworkRepository()
+    fun provideDiseaseNetworkRepository(
+        @ApplicationContext context: Context
+    ): DiseaseNetworkRepository = DiseaseNetworkRepository(context)
 }
