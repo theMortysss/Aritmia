@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "my.diplom.aritmia"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -44,34 +44,24 @@ android {
 }
 
 dependencies {
-// Splash
     implementation(libs.androidx.core.splashscreen)
-    // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.webkit)
     implementation(libs.core.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.room.ktx)
-    // Hilt
     implementation(libs.hilt.android)
     implementation(libs.androidx.appcompat)
     ksp(libs.dagger.compiler)
     ksp(libs.hilt.android.compiler)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    // Navigation
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
-    // DataStore
     implementation(libs.androidx.datastore.preferences)
-    // Extended Icon Library
     implementation(libs.androidx.material.icons.extended)
-    // Material
     implementation(libs.androidx.material)
-    // Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
-    // LiveData
     implementation(libs.androidx.runtime.livedata)
-    // Other
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

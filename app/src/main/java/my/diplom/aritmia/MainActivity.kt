@@ -38,44 +38,66 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val prefs          = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val savedPatientId = prefs.getInt("current_patient_id", -1).takeIf { it != -1 }
-        val savedDoctorId  = prefs.getInt("current_doctor_id",  -1).takeIf { it != -1 }
-        val savedAdminId   = prefs.getInt("current_admin_id",   -1).takeIf { it != -1 }
+        val savedDoctorId = prefs.getInt("current_doctor_id", -1).takeIf { it != -1 }
+        val savedAdminId = prefs.getInt("current_admin_id", -1).takeIf { it != -1 }
 
         setContent {
-            val navController    = rememberNavController()
-            val scope            = rememberCoroutineScope()
+            val navController = rememberNavController()
+            val scope = rememberCoroutineScope()
             val sharedViewModel: SharedViewModel = viewModel()
 
-            LaunchedEffect(Unit) {
-                if (savedPatientId != null) {
-                    val patient = db.userDao().getPatientById(savedPatientId)
-                    if (patient != null) sharedViewModel.setData(emptyList(), patient.id)
-                    else prefs.edit().remove("current_patient_id").apply()
-                }
-            }
-
-            val startDestination = when {
-                savedPatientId != null -> "symptoms"
-                savedDoctorId  != null -> "doctor"
-                savedAdminId   != null -> "admin"
-                else                   -> "login"
-            }
-
-            val onLogout = {
+            fun clearPersistedSession() {
                 prefs.edit()
                     .remove("current_patient_id")
                     .remove("current_doctor_id")
                     .remove("current_admin_id")
                     .apply()
+            }
+
+            LaunchedEffect(Unit) {
+                when {
+                    savedPatientId != null -> {
+                        val patient = db.userDao().getUserByIdAndRole(savedPatientId, Role.PATIENT)
+                        if (patient != null) {
+                            sharedViewModel.setData(emptyList(), patient.id)
+                        } else {
+                            clearPersistedSession()
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        }
+                    }
+                    savedDoctorId != null -> {
+                        val doctor = db.userDao().getUserByIdAndRole(savedDoctorId, Role.DOCTOR)
+                        if (doctor == null) {
+                            clearPersistedSession()
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        }
+                    }
+                    savedAdminId != null -> {
+                        val admin = db.userDao().getUserByIdAndRole(savedAdminId, Role.ADMIN)
+                        if (admin == null) {
+                            clearPersistedSession()
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        }
+                    }
+                }
+            }
+
+            val startDestination = when {
+                savedPatientId != null -> "symptoms"
+                savedDoctorId != null -> "doctor"
+                savedAdminId != null -> "admin"
+                else -> "login"
+            }
+
+            val onLogout = {
+                clearPersistedSession()
                 sharedViewModel.clearData()
                 navController.navigate("login") { popUpTo(0) { inclusive = true } }
             }
 
             NavHost(navController = navController, startDestination = startDestination) {
-
-                // ── Login ──────────────────────────────────────────────────────
                 composable("login") {
                     LoginScreen(
                         onLoginSuccess = { user ->
@@ -94,7 +116,7 @@ class MainActivity : ComponentActivity() {
                                 Role.DOCTOR -> navController.navigate("doctor") {
                                     popUpTo("login") { inclusive = true }
                                 }
-                                Role.ADMIN  -> navController.navigate("admin") {
+                                Role.ADMIN -> navController.navigate("admin") {
                                     popUpTo("login") { inclusive = true }
                                 }
                             }
@@ -103,7 +125,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // ── Symptoms ───────────────────────────────────────────────────
                 composable("symptoms") {
                     var rules by remember { mutableStateOf<List<RuleEntity>>(emptyList()) }
                     LaunchedEffect(Unit) { rules = db.ruleDao().getAllRules() }
@@ -114,20 +135,19 @@ class MainActivity : ComponentActivity() {
                             val hasQuestions = symptomList.any { symptom ->
                                 rules.any { rule ->
                                     symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                            rule.clarifyingQuestions != null
+                                        rule.clarifyingQuestions != null
                                 }
                             }
                             if (hasQuestions) navController.navigate("clarify")
-                            else             navController.navigate("result")
+                            else navController.navigate("result")
                         },
                         onLogout = onLogout
                     )
                 }
 
-                // ── Clarify ────────────────────────────────────────────────────
                 composable("clarify") {
-                    val symptoms       = sharedViewModel.symptoms.value
-                    val userId         = sharedViewModel.userId.value
+                    val symptoms = sharedViewModel.symptoms.value
+                    val userId = sharedViewModel.userId.value
                     val initialAnswers = sharedViewModel.answers.value
 
                     if (symptoms.isEmpty() || userId == -1) {
@@ -136,15 +156,15 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         ClarifyScreen(
-                            symptoms       = symptoms,
-                            userId         = userId,
+                            symptoms = symptoms,
+                            userId = userId,
                             initialAnswers = initialAnswers,
-                            onFinish       = { answers ->
+                            onFinish = { answers ->
                                 scope.launch {
                                     val patient = db.userDao().getPatientById(userId) ?: return@launch
-                                    val rules   = db.ruleDao().getAllRules()
+                                    val rules = db.ruleDao().getAllRules()
 
-                                    val nnRaw  = networkRepository.predict(symptoms)
+                                    val nnRaw = networkRepository.predict(symptoms)
                                     val nnProb = nnRaw?.let { (it * 100).toInt().coerceIn(0, 100) } ?: 0
 
                                     val medTerms = symptoms.mapNotNull { s ->
@@ -153,16 +173,16 @@ class MainActivity : ComponentActivity() {
 
                                     db.symptomDao().insert(
                                         SymptomEntity(
-                                            userInput         = symptoms.joinToString(". "),
-                                            medicalTerm       = medTerms.ifBlank { null },
-                                            probability       = nnProb,
-                                            patientId         = userId,
+                                            userInput = symptoms.joinToString(". "),
+                                            medicalTerm = medTerms.ifBlank { null },
+                                            probability = nnProb,
+                                            patientId = patient.id,
                                             clarifyingAnswers = answers.entries
                                                 .filter { it.value.any { a -> a.isNotBlank() } }
                                                 .joinToString(";") {
                                                     "${it.key}=${it.value.joinToString(",")}"
                                                 },
-                                            nnProbability     = nnProb
+                                            nnProbability = nnProb
                                         )
                                     )
                                     sharedViewModel.updateAnswers(answers)
@@ -174,7 +194,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // ── Result ─────────────────────────────────────────────────────
                 composable("result") {
                     val userId = sharedViewModel.userId.value
                     if (userId == -1) {
@@ -183,19 +202,16 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         ResultScreen(
-                            userId          = userId,
-                            onLogout        = onLogout,
-                            onBack          = { navController.popBackStack("symptoms", inclusive = false) },
-                            navController   = navController,
+                            userId = userId,
+                            onLogout = onLogout,
+                            onBack = { navController.popBackStack("symptoms", inclusive = false) },
+                            navController = navController,
                             sharedViewModel = sharedViewModel
                         )
                     }
                 }
 
-                // ── Doctor ─────────────────────────────────────────────────────
                 composable("doctor") { DoctorScreen(onLogout = onLogout) }
-
-                // ── Admin ──────────────────────────────────────────────────────
                 composable("admin") { AdminScreen(onLogout = onLogout) }
             }
         }

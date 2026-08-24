@@ -9,8 +9,6 @@ import kotlinx.coroutines.flow.Flow
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-// ── Пользователь ───────────────────────────────────────────────────────────────
-
 @Entity
 @TypeConverters(RoleConverter::class)
 data class User(
@@ -28,26 +26,22 @@ enum class Role { PATIENT, DOCTOR, ADMIN }
 
 object RoleConverter {
     @TypeConverter fun fromRole(role: Role): String = role.name
-    @TypeConverter fun toRole(role: String): Role   = Role.valueOf(role)
+    @TypeConverter fun toRole(role: String): Role = Role.valueOf(role)
 }
-
-// ── Конвертер дат ──────────────────────────────────────────────────────────────
 
 @RequiresApi(Build.VERSION_CODES.O)
 object LocalDateTimeConverter {
     private val fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     @TypeConverter fun fromString(v: String?): LocalDateTime? = v?.let { LocalDateTime.parse(it, fmt) }
-    @TypeConverter fun toString(dt: LocalDateTime?): String?  = dt?.format(fmt)
+    @TypeConverter fun toString(dt: LocalDateTime?): String? = dt?.format(fmt)
 }
-
-// ── Симптом / Диагноз ──────────────────────────────────────────────────────────
 
 @Entity(
     foreignKeys = [ForeignKey(
-        entity        = User::class,
+        entity = User::class,
         parentColumns = ["id"],
-        childColumns  = ["patientId"],
-        onDelete      = ForeignKey.CASCADE
+        childColumns = ["patientId"],
+        onDelete = ForeignKey.CASCADE
     )]
 )
 @RequiresApi(Build.VERSION_CODES.O)
@@ -63,8 +57,6 @@ data class SymptomEntity(
     val nnProbability: Int? = null
 )
 
-// ── Правило ────────────────────────────────────────────────────────────────────
-
 @Entity
 data class RuleEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -75,8 +67,6 @@ data class RuleEntity(
     val answerTriggers: String?
 )
 
-// ── DAO ────────────────────────────────────────────────────────────────────────
-
 @Dao
 interface UserDao {
     @Insert suspend fun insert(user: User)
@@ -85,11 +75,14 @@ interface UserDao {
 
     @Query("SELECT * FROM User") suspend fun getAllUsers(): List<User>
     @Query("SELECT * FROM User WHERE role = 'PATIENT'") suspend fun getAllPatients(): List<User>
-    @Query("SELECT * FROM User WHERE role = 'DOCTOR'")  suspend fun getAllDoctors():  List<User>
-    @Query("SELECT * FROM User WHERE role = 'ADMIN'")   suspend fun getAllAdmins():   List<User>
+    @Query("SELECT * FROM User WHERE role = 'DOCTOR'") suspend fun getAllDoctors(): List<User>
+    @Query("SELECT * FROM User WHERE role = 'ADMIN'") suspend fun getAllAdmins(): List<User>
 
     @Query("SELECT * FROM User WHERE id = :id AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientById(id: Int): User?
+
+    @Query("SELECT * FROM User WHERE id = :id AND role = :role LIMIT 1")
+    suspend fun getUserByIdAndRole(id: Int, role: Role): User?
 
     @Query("SELECT * FROM User WHERE phone = :phone AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientByPhone(phone: String): User?
@@ -97,8 +90,6 @@ interface UserDao {
     @Query("SELECT * FROM User WHERE phone = :phone AND role = :role LIMIT 1")
     suspend fun getUserByPhoneAndRole(phone: String, role: Role): User?
 
-    // Legacy queries kept for compatibility with older code paths. New authentication
-    // verifies password hashes in application code instead of querying by password.
     @Query("SELECT * FROM User WHERE phone = :phone AND password = :password AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientByPhoneAndPassword(phone: String, password: String): User?
 
@@ -159,27 +150,25 @@ interface SymptomDao {
 
 @Dao
 interface RuleDao {
-    @Insert  suspend fun insert(rule: RuleEntity)
-    @Update  suspend fun update(rule: RuleEntity)
-    @Delete  suspend fun delete(rule: RuleEntity)
+    @Insert suspend fun insert(rule: RuleEntity)
+    @Update suspend fun update(rule: RuleEntity)
+    @Delete suspend fun delete(rule: RuleEntity)
 
     @Query("SELECT * FROM RuleEntity") fun getAllRulesFlow(): Flow<List<RuleEntity>>
     @Query("SELECT * FROM RuleEntity") suspend fun getAllRules(): List<RuleEntity>
 }
 
-// ── База данных ────────────────────────────────────────────────────────────────
-
 @RequiresApi(Build.VERSION_CODES.O)
 @Database(
-    entities     = [User::class, SymptomEntity::class, RuleEntity::class],
-    version      = 7,
+    entities = [User::class, SymptomEntity::class, RuleEntity::class],
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun userDao():    UserDao
+    abstract fun userDao(): UserDao
     abstract fun symptomDao(): SymptomDao
-    abstract fun ruleDao():    RuleDao
+    abstract fun ruleDao(): RuleDao
 
     companion object {
         val MIGRATION_6_7 = object : Migration(6, 7) {
