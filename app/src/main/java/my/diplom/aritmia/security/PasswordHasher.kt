@@ -20,7 +20,7 @@ object PasswordHasher {
             ITERATIONS.toString(),
             Base64.encodeToString(salt, Base64.NO_WRAP),
             Base64.encodeToString(derived, Base64.NO_WRAP)
-        ).joinToString("$")
+        ).joinToString("\$")
     }
 
     fun verify(password: String, stored: String): Boolean {
@@ -41,7 +41,7 @@ object PasswordHasher {
     fun needsRehash(stored: String): Boolean = !isHashed(stored) ||
         stored.split('$').getOrNull(1)?.toIntOrNull() != ITERATIONS
 
-    private fun isHashed(value: String): Boolean = value.startsWith("$PREFIX$")
+    private fun isHashed(value: String): Boolean = value.startsWith("$PREFIX\$")
 
     private fun derive(password: String, salt: ByteArray, iterations: Int): ByteArray {
         val spec = PBEKeySpec(password.toCharArray(), salt, iterations, KEY_LENGTH_BITS)
