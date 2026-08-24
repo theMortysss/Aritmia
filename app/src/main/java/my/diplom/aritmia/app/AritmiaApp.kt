@@ -8,10 +8,12 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import my.diplom.aritmia.BuildConfig
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.User
 import my.diplom.aritmia.nn.NetworkRepository
+import my.diplom.aritmia.security.PasswordHasher
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -22,7 +24,7 @@ class AritmiaApp : Application() {
     @Inject lateinit var networkRepository: NetworkRepository
 
     companion object {
-        private const val NN_LOGIC_VERSION = 2
+        private const val NN_LOGIC_VERSION = 3
         private const val PREF_NN_VERSION  = "nn_logic_version"
     }
 
@@ -56,13 +58,16 @@ class AritmiaApp : Application() {
         if (rules.isEmpty()) {
             getInitialRules().forEach { appDatabase.ruleDao().insert(it) }
         }
+
+        // Тестовый bootstrap-администратор создаётся только в debug-сборке.
+        // В release учётная запись администратора должна быть подготовлена отдельно.
         val admins = appDatabase.userDao().getAllAdmins()
-        if (admins.isEmpty()) {
+        if (BuildConfig.DEBUG && admins.isEmpty()) {
             appDatabase.userDao().insert(
                 User(
                     phone    = "+7-666-666-66-66",
                     fullName = "Администратор",
-                    password = "admin123",
+                    password = PasswordHasher.hash("admin123"),
                     role     = Role.ADMIN
                 )
             )
@@ -110,6 +115,23 @@ class AritmiaApp : Application() {
         RuleEntity(0, "отеки стоп",              "Отеки стоп",                   20, "Сопровождаются ли отеки болью?",          "да=Отеки с болью;нет=Отеки без боли"),
         RuleEntity(0, "чувство тяжести",         "Тяжесть в груди",              25, "Усиливается ли тяжесть при нагрузке?",    "да=Тяжесть при нагрузке;нет=Тяжесть в покое"),
         RuleEntity(0, "сердце бьется сильно",    "Сильное сердцебиение",         30, "Сопровождается ли это слабостью?",        "да=Сильное сердцебиение со слабостью;нет=Изолированное сильное сердцебиение"),
+
+        // Дополнительные сердечно-сосудистые признаки для новых профилей заболеваний.
+        RuleEntity(0, "пульс редкий",             "Брадикардия",                   30, null, null),
+        RuleEntity(0, "боль за грудиной",         "Загрудинная боль",              35, "Возникает ли боль при нагрузке?",         "да=Боль в груди при нагрузке;нет=Боль в груди в покое"),
+        RuleEntity(0, "боль отдает в руку",       "Иррадиация боли в руку",        35, null, null),
+        RuleEntity(0, "боль отдает в челюсть",   "Иррадиация боли в челюсть",    35, null, null),
+        RuleEntity(0, "одышка лежа",             "Ортопноэ",                      30, null, null),
+        RuleEntity(0, "просыпаюсь от удушья",    "Пароксизмальная ночная одышка",35, null, null),
+        RuleEntity(0, "давление высокое",        "Повышенное артериальное давление", 25, null, null),
+        RuleEntity(0, "давление выше 140",       "Повышенное артериальное давление", 25, null, null),
+        RuleEntity(0, "обморок при нагрузке",    "Синкопе при нагрузке",          35, null, null),
+        RuleEntity(0, "шум в сердце",            "Сердечный шум",                 20, null, null),
+        RuleEntity(0, "боль усиливается лежа",   "Позиционная боль в груди",      25, null, null),
+        RuleEntity(0, "боль уменьшается сидя",   "Позиционная боль в груди",      25, null, null),
+        RuleEntity(0, "толчки в груди",          "Ощущение экстрасистол",         30, null, null),
+        RuleEntity(0, "пропуски ударов",         "Ощущение экстрасистол",         30, null, null),
+
         // Симптомы не связанные с аритмией (weight = 0)
         RuleEntity(0, "кашель",                  "Кашель",                        0, "Является ли кашель сухим?",               "да=Сухой кашель;нет=Влажный кашель"),
         RuleEntity(0, "боль в горле",            "Боль в горле",                  0, "Усиливается ли боль при глотании?",       "да=Боль при глотании;нет=Постоянная боль в горле"),
