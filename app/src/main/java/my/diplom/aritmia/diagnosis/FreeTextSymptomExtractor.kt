@@ -1,7 +1,7 @@
 package my.diplom.aritmia.diagnosis
 
 /**
- * Нормализует свободно введённые русские жалобы в устойчивые симптом-концепты.
+ * Нормализует свободно введённые русские жалобы в устойчивые symptom-concepts.
  * Модель работает по концептам, а не по точным строкам пользователя.
  */
 object FreeTextSymptomExtractor {
@@ -23,7 +23,7 @@ object FreeTextSymptomExtractor {
             val aliases = (concept.aliases + concept.label).map(::normalize)
             normalizedInputs.forEach { input ->
                 aliases.forEach { alias ->
-                    if (matches(input, alias)) {
+                    if (matches(input, alias) && !isNegated(input, alias)) {
                         matched.getOrPut(concept.id) { mutableListOf() }.add(alias)
                     }
                 }
@@ -62,12 +62,40 @@ object FreeTextSymptomExtractor {
         if (input == alias || input.contains(alias)) return true
         if (alias.length >= 7 && alias.contains(input)) return true
 
-        // Небольшая устойчивость к свободной формулировке:
-        // считаем совпадением, если совпало >= 70% значимых слов alias.
         val aliasWords = alias.split(' ').filter { it.length >= 4 }.toSet()
         if (aliasWords.isEmpty()) return false
         val inputWords = input.split(' ').filter { it.length >= 4 }.toSet()
         val overlap = aliasWords.intersect(inputWords).size.toDouble() / aliasWords.size
         return overlap >= 0.70
+    }
+
+    /**
+     * Conservative Russian negation handling. We suppress a matched symptom when the
+     * complaint explicitly says that it is absent. Phrases like "боль не проходит"
+     * must remain positive, so "не" by itself is not treated as a universal negator.
+     */
+    private fun isNegated(input: String, alias: String): Boolean {
+        val escaped = Regex.escape(alias)
+        val explicit = listOf(
+            Regex("(?:^|\\s)(?:нет|без)\\s+(?:никакой\\s+)?$escaped(?:$|\\s)"),
+            Regex("(?:^|\\s)$escaped\\s+(?:нет|отсутствует|не наблюдается)(?:$|\\s)"),
+            Regex("(?:^|\\s)(?:отсутствует|не наблюдается)\\s+$escaped(?:$|\\s)")
+        )
+        if (explicit.any { it.containsMatchIn(input) }) return true
+
+        // Handles natural word order such as "грудь не болит", "голова не кружится".
+        val negatedVerbs = setOf(
+            "болит", "болят", "кружится", "тошнит", "рвет", "кашляю", "кашляет",
+            "задыхаюсь", "потею", "отекает", "отекают", "бьется", "бьётся"
+        )
+        val words = input.split(' ')
+        val aliasWords = alias.split(' ').toSet()
+        for (i in 0 until words.lastIndex) {
+            if (words[i] == "не" && words[i + 1] in negatedVerbs) {
+                val nearby = words.subList((i - 3).coerceAtLeast(0), (i + 4).coerceAtMost(words.size)).toSet()
+                if (nearby.intersect(aliasWords).isNotEmpty()) return true
+            }
+        }
+        return false
     }
 }
