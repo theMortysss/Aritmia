@@ -2,6 +2,7 @@ package my.diplom.aritmia.ui.screen.result.model
 
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.DiseaseCandidate
 
 data class ResultScreenState(
     val logout: Boolean = false,
@@ -14,6 +15,7 @@ data class ResultScreenState(
     val recognizedSymptoms: List<String> = emptyList(),
     val unrecognizedSymptoms: List<String> = emptyList(),
     val recognizedMedicalTerms: List<String> = emptyList(),
+    val diseaseCandidates: List<DiseaseCandidate> = emptyList(),
     val navigateToClarify: Boolean = false,
     val navigateBack: Boolean = false,
     val suggestions: List<String> = emptyList(),
