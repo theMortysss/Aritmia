@@ -94,6 +94,11 @@ interface UserDao {
     @Query("SELECT * FROM User WHERE phone = :phone AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientByPhone(phone: String): User?
 
+    @Query("SELECT * FROM User WHERE phone = :phone AND role = :role LIMIT 1")
+    suspend fun getUserByPhoneAndRole(phone: String, role: Role): User?
+
+    // Legacy queries kept for compatibility with older code paths. New authentication
+    // verifies password hashes in application code instead of querying by password.
     @Query("SELECT * FROM User WHERE phone = :phone AND password = :password AND role = 'PATIENT' LIMIT 1")
     suspend fun getPatientByPhoneAndPassword(phone: String, password: String): User?
 
