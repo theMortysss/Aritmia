@@ -11,14 +11,16 @@ import kotlin.random.Random
 /**
  * Репозиторий многоклассовой сердечно-сосудистой модели.
  *
- * Приоритет: загрузить заранее обученную модель из assets/disease_model.json.
- * Если asset отсутствует или несовместим, приложение остаётся работоспособным за счёт
- * bootstrap-обучения; это fallback для разработки, а не финальная исследовательская модель.
+ * Приоритет: загрузить заранее обученную модель из assets/disease_model.json либо
+ * финальные v2-части из assets/disease_model/. Если pretrained asset отсутствует или
+ * несовместим, приложение остаётся работоспособным за счёт bootstrap fallback.
  */
 class DiseaseNetworkRepository(private val context: Context) {
 
     companion object {
         private const val MODEL_ASSET = "disease_model.json"
+        private const val MODEL_PARTS_DIR = "disease_model"
+        private const val MODEL_PART_PREFIX = "v2-"
         private const val MODEL_TYPE = "aritmia_symptom_multiclass_mlp"
         private const val FORMAT_VERSION = 1
     }
@@ -93,8 +95,30 @@ class DiseaseNetworkRepository(private val context: Context) {
     fun lastLoss(): Double? = network?.lastLoss
     fun lastEpochs(): Int? = network?.lastEpochs
 
+    private fun readModelJson(): String {
+        runCatching {
+            return context.assets.open(MODEL_ASSET).bufferedReader().use { it.readText() }
+        }
+
+        val parts = context.assets.list(MODEL_PARTS_DIR)
+            ?.filter { it.startsWith(MODEL_PART_PREFIX) && it.endsWith(".part") }
+            ?.sorted()
+            .orEmpty()
+        require(parts.isNotEmpty()) { "Pretrained disease model asset not found" }
+
+        return buildString {
+            parts.forEach { fileName ->
+                append(
+                    context.assets.open("$MODEL_PARTS_DIR/$fileName")
+                        .bufferedReader()
+                        .use { it.readText() }
+                )
+            }
+        }
+    }
+
     private fun loadPretrainedModel(): Pair<DiseaseNeuralNetwork, List<String>>? = runCatching {
-        val raw = context.assets.open(MODEL_ASSET).bufferedReader().use { it.readText() }
+        val raw = readModelJson()
         val json = Json { ignoreUnknownKeys = true }
         val snapshot = json.decodeFromString<DiseaseModelSnapshot>(raw)
 
@@ -105,7 +129,7 @@ class DiseaseNetworkRepository(private val context: Context) {
 
         val expectedInputs = DiseaseCatalog.concepts.map { it.id }
         require(snapshot.inputConceptIds == expectedInputs) {
-            "Несовместимый порядок symptom-concepts в disease_model.json"
+            "Несовместимый порядок symptom-concepts в pretrained disease model"
         }
         require(snapshot.outputDiseaseIds.isNotEmpty())
         require(snapshot.outputDiseaseIds.distinct().size == snapshot.outputDiseaseIds.size)
