@@ -58,16 +58,30 @@ object FreeTextSymptomExtractor {
         .replace(Regex("\\s+"), " ")
         .trim()
 
+    /**
+     * Sparse medical complaints require conservative matching. A partial fuzzy match is
+     * dangerous here because a generic word such as "болит" must not turn "болит горло"
+     * into a cardiovascular concept.
+     *
+     * We therefore accept only:
+     * 1) an exact/whole-phrase occurrence; or
+     * 2) all meaningful words of a multi-word alias, allowing harmless word reordering
+     *    such as "пульс частый" vs "частый пульс".
+     */
     private fun matches(input: String, alias: String): Boolean {
-        if (input == alias || input.contains(alias)) return true
-        if (alias.length >= 7 && alias.contains(input)) return true
+        if (input == alias) return true
+        if ((" $input ").contains(" $alias ")) return true
 
-        val aliasWords = alias.split(' ').filter { it.length >= 4 }.toSet()
-        if (aliasWords.isEmpty()) return false
-        val inputWords = input.split(' ').filter { it.length >= 4 }.toSet()
-        val overlap = aliasWords.intersect(inputWords).size.toDouble() / aliasWords.size
-        return overlap >= 0.70
+        val aliasWords = meaningfulWords(alias)
+        if (aliasWords.size < 2) return false
+        val inputWords = meaningfulWords(input)
+        return aliasWords.all { it in inputWords }
     }
+
+    private fun meaningfulWords(value: String): Set<String> = value
+        .split(' ')
+        .filter { it.length >= 4 }
+        .toSet()
 
     /**
      * Conservative Russian negation handling. We suppress a matched symptom when the
