@@ -202,7 +202,7 @@ class AdminScreenViewModel @Inject constructor(
                 action = if (formUser.id == 0) "USER_CREATE" else "USER_UPDATE",
                 entityType = "User",
                 entityId = persisted?.id?.toString() ?: formUser.id.takeIf { it != 0 }?.toString(),
-                details = "role=${role.name};phone=$formattedPhone;passwordChanged=${password.isNotBlank()}"
+                details = "role=${role.name};passwordChanged=${password.isNotBlank()}"
             )
             _state.update { it.copy(showUserEditor = false, selectedUser = null, errorMessage = null) }
             loadData()
@@ -216,7 +216,7 @@ class AdminScreenViewModel @Inject constructor(
         }
         viewModelScope.launch {
             db.userDao().delete(user)
-            logAudit("USER_DELETE", "User", user.id.toString(), "role=${user.role.name};phone=${user.phone}")
+            logAudit("USER_DELETE", "User", user.id.toString(), "role=${user.role.name}")
             loadData()
         }
     }
@@ -232,7 +232,7 @@ class AdminScreenViewModel @Inject constructor(
                 action = if (active) "USER_UNBLOCK" else "USER_BLOCK",
                 entityType = "User",
                 entityId = user.id.toString(),
-                details = "role=${user.role.name};phone=${user.phone}"
+                details = "role=${user.role.name}"
             )
             loadData()
         }

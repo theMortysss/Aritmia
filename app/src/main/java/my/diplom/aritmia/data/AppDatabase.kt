@@ -43,7 +43,8 @@ object LocalDateTimeConverter {
         parentColumns = ["id"],
         childColumns = ["patientId"],
         onDelete = ForeignKey.CASCADE
-    )]
+    )],
+    indices = [Index(value = ["patientId"])]
 )
 @RequiresApi(Build.VERSION_CODES.O)
 data class SymptomEntity(
@@ -270,7 +271,7 @@ interface RuleDao {
         AuditEventEntity::class,
         RuleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
@@ -332,6 +333,12 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE User ADD COLUMN isActive INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_SymptomEntity_patientId ON SymptomEntity(patientId)")
             }
         }
     }

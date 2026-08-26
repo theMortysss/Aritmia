@@ -100,6 +100,27 @@ class AssessmentMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration9To10IndexesSymptomPatientForeignKey() {
+        val db = helper.writableDatabase
+        AppDatabase.MIGRATION_7_8.migrate(db)
+        AppDatabase.MIGRATION_8_9.migrate(db)
+        AppDatabase.MIGRATION_9_10.migrate(db)
+
+        db.query("PRAGMA index_list('SymptomEntity')").use { cursor ->
+            var foundPatientIndex = false
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                val unique = cursor.getInt(cursor.getColumnIndexOrThrow("unique"))
+                if (name == "index_SymptomEntity_patientId") {
+                    assertEquals(0, unique)
+                    foundPatientIndex = true
+                }
+            }
+            assertTrue(foundPatientIndex)
+        }
+    }
+
     private fun tableExists(db: SupportSQLiteDatabase, table: String): Boolean =
         db.query(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
