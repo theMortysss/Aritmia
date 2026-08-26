@@ -37,17 +37,38 @@ class AppSmokeInstrumentedTest {
     }
 
     @Test
-    fun singleCardiovascularConceptAbstainsFromRanking() = runBlocking {
+    fun oneToThreeCardiovascularConceptsAbstainFromRanking() = runBlocking {
         val repository = repository()
-        val assessment = repository.assess(listOf("болит грудь"))
 
-        assertEquals(DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE, assessment.status)
-        assertEquals(1, assessment.recognizedConceptIds.size)
-        assertTrue(assessment.candidates.isEmpty())
+        val one = repository.assess(listOf("болит грудь"))
+        assertEquals(DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE, one.status)
+        assertEquals(1, one.recognizedConceptIds.size)
+        assertTrue(one.candidates.isEmpty())
+
+        val two = repository.assess(
+            listOf(
+                "пульс нерегулярный",
+                "чувствую сердцебиение"
+            )
+        )
+        assertEquals(DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE, two.status)
+        assertEquals(2, two.recognizedConceptIds.size)
+        assertTrue(two.candidates.isEmpty())
+
+        val three = repository.assess(
+            listOf(
+                "пульс нерегулярный",
+                "чувствую сердцебиение",
+                "одышка"
+            )
+        )
+        assertEquals(DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE, three.status)
+        assertEquals(3, three.recognizedConceptIds.size)
+        assertTrue(three.candidates.isEmpty())
     }
 
     @Test
-    fun pretrainedDiseaseModelLoadsAndRanksSufficientComplaint() = runBlocking {
+    fun pretrainedDiseaseModelLoadsAndRanksFourConceptComplaint() = runBlocking {
         val repository = repository()
         repository.initialize()
 
@@ -55,12 +76,14 @@ class AppSmokeInstrumentedTest {
 
         val assessment = repository.assess(
             complaints = listOf(
-                "сердце бьется неровно",
+                "пульс нерегулярный",
                 "чувствую сердцебиение",
-                "одышка"
+                "одышка",
+                "голова кружится"
             )
         )
 
+        assertEquals(4, assessment.recognizedConceptIds.size)
         assertEquals(DiseaseAssessmentStatus.RANKED, assessment.status)
         assertTrue("Expected non-empty cardiovascular top-5", assessment.candidates.isNotEmpty())
         assertTrue("Expected no more than five candidates", assessment.candidates.size <= 5)
