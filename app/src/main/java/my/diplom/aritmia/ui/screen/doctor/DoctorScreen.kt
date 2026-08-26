@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -18,15 +19,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.ui.composable.TopBar
+import my.diplom.aritmia.ui.screen.doctor.model.DoctorAssessmentItem
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
 import java.time.Instant
 import java.time.ZoneId
@@ -41,15 +43,13 @@ fun DoctorScreen(
     onLogout: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
-    val focusManager: FocusManager = LocalFocusManager.current
-    val tabs = listOf("Пациенты", "Правила")
-    val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-
+    val focusManager = LocalFocusManager.current
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm") }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        viewModel.state.collect { s -> if (s.logout) onLogout() }
+    LaunchedEffect(state.logout) {
+        if (state.logout) onLogout()
     }
 
     Scaffold(
@@ -71,365 +71,484 @@ fun DoctorScreen(
                 )
         ) {
             TabRow(selectedTabIndex = state.selectedTabIndex) {
-                tabs.forEachIndexed { index, title ->
+                listOf("Обращения", "Правила").forEachIndexed { index, title ->
                     Tab(
-                        text = { Text(title) },
                         selected = state.selectedTabIndex == index,
-                        onClick = { viewModel.onIntent(DoctorScreenIntent.ChangeTab(index)) }
+                        onClick = { viewModel.onIntent(DoctorScreenIntent.ChangeTab(index)) },
+                        text = { Text(title) }
                     )
                 }
             }
 
             when (state.selectedTabIndex) {
-                0 -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Button(onClick = { viewModel.onIntent(DoctorScreenIntent.ShowFilterSheet) }) {
-                                Text("Фильтры")
-                            }
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                val summary = buildFilterSummary(
-                                    state.phoneFilter,
-                                    state.nameFilter,
-                                    state.startDate,
-                                    state.endDate,
-                                    dateFormatter
-                                )
-                                if (summary.isNotEmpty()) {
-                                    Text(
-                                        "Фильтры:",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    summary.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-                                } else {
-                                    Text("Фильтры не заданы", style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(16.dp))
-
-                        if (state.isLoading) {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                        } else if (state.symptoms.isEmpty()) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    if (state.phoneFilter.isBlank() && state.nameFilter.isBlank() &&
-                                        state.startDate == null && state.endDate == null
-                                    ) {
-                                        "Симптомы пациентов отсутствуют"
-                                    } else {
-                                        "Симптомы по заданным фильтрам не найдены"
-                                    },
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    )
-                                )
-                            }
-                        } else {
-                            LazyColumn {
-                                items(state.symptoms) { item ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                        elevation = CardDefaults.cardElevation(4.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
-                                            Text(
-                                                "${item.user?.fullName ?: "Неизвестно"}\n(${item.user?.phone})",
-                                                style = MaterialTheme.typography.bodyLarge
-                                            )
-                                            Spacer(Modifier.height(4.dp))
-                                            Text("Дата ввода: ${item.symptom.createdAt.format(dateFormatter)}")
-                                            Spacer(Modifier.height(8.dp))
-
-                                            Text("Начальные симптомы:")
-                                            item.symptom.userInput.split(". ")
-                                                .filter { it.isNotBlank() }
-                                                .forEach { Text("- $it") }
-
-                                            if (item.recognizedMedicalTerms.isNotEmpty()) {
-                                                Spacer(Modifier.height(8.dp))
-                                                Text("Распознанные симптомы:")
-                                                item.recognizedMedicalTerms.forEach { Text("- $it") }
-                                            }
-
-                                            if (item.unrecognizedSymptoms.isNotEmpty()) {
-                                                Spacer(Modifier.height(8.dp))
-                                                Text("Нераспознанные симптомы:")
-                                                item.unrecognizedSymptoms.forEach { Text("- $it") }
-                                            }
-
-                                            if (item.clarifyingAnswers.isNotEmpty()) {
-                                                Spacer(Modifier.height(8.dp))
-                                                Text("Ответы на уточняющие вопросы:")
-                                                item.clarifyingAnswers.forEach { (symptom, answers) ->
-                                                    answers.forEach { Text("- $symptom: $it") }
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(8.dp))
-
-                                            if (item.user != null) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Checkbox(
-                                                        checked = item.symptom.calledByDoctor,
-                                                        onCheckedChange = { checked ->
-                                                            viewModel.onIntent(
-                                                                DoctorScreenIntent.MarkPatientAsCalled(
-                                                                    item.symptom.id,
-                                                                    checked
-                                                                )
-                                                            )
-                                                        }
-                                                    )
-                                                    Text(
-                                                        "С пациентом связались",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        modifier = Modifier.padding(start = 8.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                1 -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(16.dp)
-                    ) {
-                        Button(onClick = {
-                            viewModel.onIntent(DoctorScreenIntent.SelectRule(null))
-                            viewModel.onIntent(DoctorScreenIntent.ShowRuleEditor)
-                        }) { Text("Добавить правило") }
-
-                        Spacer(Modifier.height(16.dp))
-
-                        LazyColumn {
-                            items(state.rules) { rule ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text("Ключ: ${rule.symptomKey}")
-                                        Text("Термин: ${rule.medicalTerm}")
-                                        Text("Вес: ${rule.probabilityWeight}")
-                                        Text("Вопросы: ${rule.clarifyingQuestions ?: "Нет"}")
-                                        Text("Триггеры: ${rule.answerTriggers ?: "Нет"}")
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Button(onClick = {
-                                                viewModel.onIntent(DoctorScreenIntent.SelectRule(rule))
-                                                viewModel.onIntent(DoctorScreenIntent.ShowRuleEditor)
-                                            }) { Text("Редактировать") }
-                                            Button(onClick = {
-                                                viewModel.onIntent(DoctorScreenIntent.DeleteRule(rule))
-                                            }) { Text("Удалить") }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (state.showRuleEditor) {
-                        RuleEditorDialog(
-                            rule = state.selectedRule,
-                            onSave = { rule ->
-                                viewModel.onIntent(DoctorScreenIntent.SaveRule(rule))
-                                viewModel.onIntent(DoctorScreenIntent.HideRuleEditor)
-                            },
-                            onDismiss = { viewModel.onIntent(DoctorScreenIntent.HideRuleEditor) }
-                        )
-                    }
-                }
+                0 -> AssessmentQueue(
+                    state = state,
+                    dateFormatter = dateFormatter,
+                    onIntent = viewModel::onIntent
+                )
+                1 -> RulesWorkspace(
+                    rules = state.rules,
+                    showRuleEditor = state.showRuleEditor,
+                    selectedRule = state.selectedRule,
+                    onIntent = viewModel::onIntent
+                )
             }
         }
 
         if (state.showFilterSheet) {
-            ModalBottomSheet(
-                contentWindowInsets = { WindowInsets.navigationBars },
-                onDismissRequest = { viewModel.onIntent(DoctorScreenIntent.HideFilterSheet) },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            DoctorFilterSheet(
+                phone = state.tempPhoneFilter,
+                name = state.tempNameFilter,
+                startDate = state.tempStartDate,
+                endDate = state.tempEndDate,
+                dateFormatter = dateFormatter,
+                showStartDatePicker = showStartDatePicker,
+                showEndDatePicker = showEndDatePicker,
+                onShowStartDatePicker = { showStartDatePicker = it },
+                onShowEndDatePicker = { showEndDatePicker = it },
+                onIntent = viewModel::onIntent
+            )
+        }
+    }
+
+    state.selectedAssessment?.takeIf { state.showAssessmentDialog }?.let { selected ->
+        AssessmentDetailsDialog(
+            item = selected,
+            timeline = state.patientTimeline,
+            doctorNote = state.doctorNoteDraft,
+            dateFormatter = dateFormatter,
+            onNoteChange = { viewModel.onIntent(DoctorScreenIntent.UpdateDoctorNote(it)) },
+            onSaveWorkflow = { viewModel.onIntent(DoctorScreenIntent.SaveAssessmentWorkflow(it)) },
+            onDismiss = { viewModel.onIntent(DoctorScreenIntent.CloseAssessment) }
+        )
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+private fun AssessmentQueue(
+    state: my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenState,
+    dateFormatter: DateTimeFormatter,
+    onIntent: (DoctorScreenIntent) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(onClick = { onIntent(DoctorScreenIntent.ShowFilterSheet) }) {
+                Text("Фильтры")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = state.attentionOnly,
+                    onCheckedChange = { onIntent(DoctorScreenIntent.SetAttentionOnly(it)) }
+                )
+                Text("Требуют внимания", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val statuses = listOf(
+                "ALL",
+                "INSUFFICIENT_EVIDENCE",
+                "RANKED",
+                "OUT_OF_SCOPE",
+                "MODEL_UNAVAILABLE"
+            )
+            items(statuses) { status ->
+                FilterChip(
+                    selected = state.statusFilter == status,
+                    onClick = { onIntent(DoctorScreenIntent.SetStatusFilter(status)) },
+                    label = { Text(assessmentStatusLabel(status)) }
+                )
+            }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val workflows = listOf("ALL") + AssessmentWorkflow.values.toList()
+            items(workflows) { workflow ->
+                FilterChip(
+                    selected = state.workflowFilter == workflow,
+                    onClick = { onIntent(DoctorScreenIntent.SetWorkflowFilter(workflow)) },
+                    label = { Text(workflowLabel(workflow)) }
+                )
+            }
+        }
+
+        Text(
+            "Обращений: ${state.totalCount}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        when {
+            state.isLoading -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator() }
+
+            state.assessments.isEmpty() -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "Фильтры",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                Text(
+                    "Обращения по заданным фильтрам не найдены",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-                    OutlinedTextField(
-                        value = state.tempPhoneFilter,
-                        onValueChange = { viewModel.onIntent(DoctorScreenIntent.UpdateTempFilter(phone = it)) },
-                        label = { Text("Телефон (только цифры)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-
-                    OutlinedTextField(
-                        value = state.tempNameFilter,
-                        onValueChange = { viewModel.onIntent(DoctorScreenIntent.UpdateTempFilter(name = it)) },
-                        label = { Text("ФИО") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "С: ${state.tempStartDate?.format(dateFormatter) ?: "Не выбрано"}",
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(onClick = { showStartDatePicker = true }) { Text("Выбрать") }
-                        if (state.tempStartDate != null) {
-                            IconButton(onClick = {
-                                viewModel.onIntent(DoctorScreenIntent.UpdateTempFilter(startDate = null))
-                            }) { Icon(Icons.Default.Clear, "Очистить") }
-                        }
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.assessments, key = { it.assessment.id }) { item ->
+                    AssessmentQueueCard(item, dateFormatter) {
+                        onIntent(DoctorScreenIntent.OpenAssessment(item.assessment.id))
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "По: ${state.tempEndDate?.format(dateFormatter) ?: "Не выбрано"}",
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(onClick = { showEndDatePicker = true }) { Text("Выбрать") }
-                        if (state.tempEndDate != null) {
-                            IconButton(onClick = {
-                                viewModel.onIntent(DoctorScreenIntent.UpdateTempFilter(endDate = null))
-                            }) { Icon(Icons.Default.Clear, "Очистить") }
-                        }
-                    }
-
-                    if (showStartDatePicker) {
-                        DatePickerDialog(
-                            onDismissRequest = { showStartDatePicker = false },
-                            confirmButton = {
-                                TextButton(onClick = { showStartDatePicker = false }) { Text("ОК") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showStartDatePicker = false }) { Text("Отмена") }
-                            }
-                        ) {
-                            val dpState = rememberDatePickerState(
-                                initialSelectedDateMillis = state.tempStartDate
-                                    ?.toInstant(ZoneOffset.UTC)?.toEpochMilli()
-                                    ?: System.currentTimeMillis()
-                            )
-                            DatePicker(state = dpState, modifier = Modifier.padding(16.dp))
-                            LaunchedEffect(dpState.selectedDateMillis) {
-                                dpState.selectedDateMillis?.let { ms ->
-                                    viewModel.onIntent(
-                                        DoctorScreenIntent.UpdateTempFilter(
-                                            startDate = Instant.ofEpochMilli(ms)
-                                                .atZone(ZoneId.systemDefault()).toLocalDateTime()
-                                                .withHour(0).withMinute(0)
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (showEndDatePicker) {
-                        DatePickerDialog(
-                            onDismissRequest = { showEndDatePicker = false },
-                            confirmButton = {
-                                TextButton(onClick = { showEndDatePicker = false }) { Text("ОК") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showEndDatePicker = false }) { Text("Отмена") }
-                            }
-                        ) {
-                            val dpState = rememberDatePickerState(
-                                initialSelectedDateMillis = state.tempEndDate
-                                    ?.toInstant(ZoneOffset.UTC)?.toEpochMilli()
-                                    ?: System.currentTimeMillis()
-                            )
-                            DatePicker(state = dpState, modifier = Modifier.padding(16.dp))
-                            LaunchedEffect(dpState.selectedDateMillis) {
-                                dpState.selectedDateMillis?.let { ms ->
-                                    viewModel.onIntent(
-                                        DoctorScreenIntent.UpdateTempFilter(
-                                            endDate = Instant.ofEpochMilli(ms)
-                                                .atZone(ZoneId.systemDefault()).toLocalDateTime()
-                                                .withHour(23).withMinute(59)
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { viewModel.onIntent(DoctorScreenIntent.ResetFilters) }) {
-                            Text("Сбросить")
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = {
-                            viewModel.onIntent(
-                                DoctorScreenIntent.ApplyFilters(
-                                    phone = state.tempPhoneFilter,
-                                    name = state.tempNameFilter,
-                                    minProbability = 0,
-                                    startDate = state.tempStartDate,
-                                    endDate = state.tempEndDate
-                                )
-                            )
-                            viewModel.onIntent(DoctorScreenIntent.HideFilterSheet)
-                        }) { Text("Применить") }
-                    }
-                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun buildFilterSummary(
-    phoneFilter: String,
-    nameFilter: String,
+private fun AssessmentQueueCard(
+    item: DoctorAssessmentItem,
+    dateFormatter: DateTimeFormatter,
+    onOpen: () -> Unit
+) {
+    val assessment = item.assessment
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (assessment.needsDoctorAttention) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    item.user?.fullName ?: "Пациент #${assessment.patientId}",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(assessment.createdAt.format(dateFormatter), style = MaterialTheme.typography.bodySmall)
+            }
+            item.user?.phone?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Text("Оценка: ${assessmentStatusLabel(assessment.status)}")
+            Text("Работа врача: ${workflowLabel(assessment.workflowStatus)}")
+            Text(
+                assessment.complaints,
+                maxLines = 2,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text("Распознано признаков: ${item.conceptLabels.size}", style = MaterialTheme.typography.bodySmall)
+            item.candidates.firstOrNull()?.let {
+                Text("Top-1 модели: ${it.name} — ${it.modelScorePercent}%", style = MaterialTheme.typography.bodySmall)
+            }
+            if (assessment.needsDoctorAttention) {
+                Text(
+                    "Требует внимания",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+                Text("Открыть обращение")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssessmentDetailsDialog(
+    item: DoctorAssessmentItem,
+    timeline: List<DoctorAssessmentItem>,
+    doctorNote: String,
+    dateFormatter: DateTimeFormatter,
+    onNoteChange: (String) -> Unit,
+    onSaveWorkflow: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val assessment = item.assessment
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Обращение пациента") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(item.user?.fullName ?: "Пациент #${assessment.patientId}", fontWeight = FontWeight.Bold)
+                item.user?.let { user ->
+                    Text("Телефон: ${user.phone}")
+                    user.age?.let { Text("Возраст: $it") }
+                }
+                Text("Дата: ${assessment.createdAt.format(dateFormatter)}")
+                Text("Статус оценки: ${assessmentStatusLabel(assessment.status)}", fontWeight = FontWeight.Bold)
+
+                HorizontalDivider()
+                Text("Исходные жалобы", fontWeight = FontWeight.Bold)
+                assessment.complaints.split(". ").filter { it.isNotBlank() }.forEach { Text("• $it") }
+
+                Text("Распознанные признаки", fontWeight = FontWeight.Bold)
+                if (item.conceptLabels.isEmpty()) Text("Нет")
+                else item.conceptLabels.forEach { Text("• $it") }
+
+                if (item.candidates.isNotEmpty()) {
+                    Text("Результат модели", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Проценты — относительная уверенность модели между поддерживаемыми классами, а не клиническая вероятность диагноза.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    item.candidates.forEachIndexed { index, candidate ->
+                        Text("${index + 1}. ${candidate.name} — ${candidate.modelScorePercent}%")
+                        if (candidate.matchedSignals.isNotEmpty()) {
+                            Text(
+                                "Признаки: ${candidate.matchedSignals.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    "Версии: model=${assessment.modelVersion}, extractor=${assessment.extractorVersion}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider()
+                Text("Работа с обращением", fontWeight = FontWeight.Bold)
+                Text("Текущий статус: ${workflowLabel(assessment.workflowStatus)}")
+                OutlinedTextField(
+                    value = doctorNote,
+                    onValueChange = onNoteChange,
+                    label = { Text("Комментарий врача") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(AssessmentWorkflow.values.toList()) { workflow ->
+                        Button(onClick = { onSaveWorkflow(workflow) }) {
+                            Text(workflowLabel(workflow))
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+                Text("История пациента", fontWeight = FontWeight.Bold)
+                timeline.forEach { history ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(history.assessment.createdAt.format(dateFormatter), fontWeight = FontWeight.Medium)
+                            Text(assessmentStatusLabel(history.assessment.status))
+                            Text("Врач: ${workflowLabel(history.assessment.workflowStatus)}")
+                            Text(history.assessment.complaints, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                            history.candidates.firstOrNull()?.let {
+                                Text("Top-1: ${it.name} — ${it.modelScorePercent}%", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
+
+@Composable
+private fun RulesWorkspace(
+    rules: List<RuleEntity>,
+    showRuleEditor: Boolean,
+    selectedRule: RuleEntity?,
+    onIntent: (DoctorScreenIntent) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Button(onClick = {
+            onIntent(DoctorScreenIntent.SelectRule(null))
+            onIntent(DoctorScreenIntent.ShowRuleEditor)
+        }) { Text("Добавить правило") }
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Правила управляют подсказками, уточняющими вопросами и medical terms. Они не изменяют веса pretrained disease-модели.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn {
+            items(rules, key = { it.id }) { rule ->
+                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Ключ: ${rule.symptomKey}", fontWeight = FontWeight.Bold)
+                        Text("Термин: ${rule.medicalTerm}")
+                        Text("Вопросы: ${rule.clarifyingQuestions ?: "Нет"}")
+                        Text("Триггеры: ${rule.answerTriggers ?: "Нет"}")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Button(onClick = {
+                                onIntent(DoctorScreenIntent.SelectRule(rule))
+                                onIntent(DoctorScreenIntent.ShowRuleEditor)
+                            }) { Text("Редактировать") }
+                            TextButton(onClick = { onIntent(DoctorScreenIntent.DeleteRule(rule)) }) {
+                                Text("Удалить")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRuleEditor) {
+        RuleEditorDialog(
+            rule = selectedRule,
+            onSave = {
+                onIntent(DoctorScreenIntent.SaveRule(it))
+                onIntent(DoctorScreenIntent.HideRuleEditor)
+            },
+            onDismiss = { onIntent(DoctorScreenIntent.HideRuleEditor) }
+        )
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DoctorFilterSheet(
+    phone: String,
+    name: String,
     startDate: java.time.LocalDateTime?,
     endDate: java.time.LocalDateTime?,
-    dateFormatter: DateTimeFormatter
-): List<String> {
-    val filters = mutableListOf<String>()
-    if (phoneFilter.isNotBlank()) filters.add("телефон=$phoneFilter")
-    if (nameFilter.isNotBlank()) filters.add("ФИО=$nameFilter")
-    if (startDate != null) filters.add("с ${startDate.format(dateFormatter)}")
-    if (endDate != null) filters.add("по ${endDate.format(dateFormatter)}")
-    return if (filters.size > 3) filters.take(3) + listOf("и ещё ${filters.size - 3}...")
-    else filters
+    dateFormatter: DateTimeFormatter,
+    showStartDatePicker: Boolean,
+    showEndDatePicker: Boolean,
+    onShowStartDatePicker: (Boolean) -> Unit,
+    onShowEndDatePicker: (Boolean) -> Unit,
+    onIntent: (DoctorScreenIntent) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = { onIntent(DoctorScreenIntent.HideFilterSheet) },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Фильтры обращений", style = MaterialTheme.typography.titleLarge)
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { onIntent(DoctorScreenIntent.UpdateTempFilter(phone = it)) },
+                label = { Text("Телефон") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { onIntent(DoctorScreenIntent.UpdateTempFilter(name = it)) },
+                label = { Text("ФИО") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            DateFilterRow("С", startDate, dateFormatter, { onShowStartDatePicker(true) }) {
+                onIntent(DoctorScreenIntent.UpdateTempFilter(startDate = null))
+            }
+            DateFilterRow("По", endDate, dateFormatter, { onShowEndDatePicker(true) }) {
+                onIntent(DoctorScreenIntent.UpdateTempFilter(endDate = null))
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { onIntent(DoctorScreenIntent.ResetFilters) }) { Text("Сбросить") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    onIntent(
+                        DoctorScreenIntent.ApplyFilters(
+                            phone = phone,
+                            name = name,
+                            minProbability = 0,
+                            startDate = startDate,
+                            endDate = endDate
+                        )
+                    )
+                    onIntent(DoctorScreenIntent.HideFilterSheet)
+                }) { Text("Применить") }
+            }
+        }
+    }
+
+    if (showStartDatePicker) {
+        AssessmentDatePicker(
+            initial = startDate,
+            endOfDay = false,
+            onSelect = { onIntent(DoctorScreenIntent.UpdateTempFilter(startDate = it)) },
+            onDismiss = { onShowStartDatePicker(false) }
+        )
+    }
+    if (showEndDatePicker) {
+        AssessmentDatePicker(
+            initial = endDate,
+            endOfDay = true,
+            onSelect = { onIntent(DoctorScreenIntent.UpdateTempFilter(endDate = it)) },
+            onDismiss = { onShowEndDatePicker(false) }
+        )
+    }
+}
+
+@Composable
+private fun DateFilterRow(
+    label: String,
+    value: java.time.LocalDateTime?,
+    formatter: DateTimeFormatter,
+    onPick: () -> Unit,
+    onClear: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("$label: ${value?.format(formatter) ?: "Не выбрано"}", modifier = Modifier.weight(1f))
+        Button(onClick = onPick) { Text("Выбрать") }
+        if (value != null) {
+            IconButton(onClick = onClear) { Icon(Icons.Default.Clear, "Очистить") }
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssessmentDatePicker(
+    initial: java.time.LocalDateTime?,
+    endOfDay: Boolean,
+    onSelect: (java.time.LocalDateTime) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial?.toInstant(ZoneOffset.UTC)?.toEpochMilli()
+            ?: System.currentTimeMillis()
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { millis ->
+                    val date = Instant.ofEpochMilli(millis)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime()
+                    onSelect(
+                        if (endOfDay) date.withHour(23).withMinute(59).withSecond(59)
+                        else date.withHour(0).withMinute(0).withSecond(0)
+                    )
+                }
+                onDismiss()
+            }) { Text("ОК") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    ) {
+        DatePicker(state = state, modifier = Modifier.padding(16.dp))
+    }
 }
 
 @Composable
@@ -438,34 +557,24 @@ fun RuleEditorDialog(
     onSave: (RuleEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var symptomKey by remember { mutableStateOf(rule?.symptomKey ?: "") }
-    var medicalTerm by remember { mutableStateOf(rule?.medicalTerm ?: "") }
-    var probabilityWeight by remember { mutableStateOf(rule?.probabilityWeight?.toString() ?: "") }
-    var clarifyingQ by remember { mutableStateOf(rule?.clarifyingQuestions ?: "") }
-    var answerTriggers by remember { mutableStateOf(rule?.answerTriggers ?: "") }
-
+    var symptomKey by remember(rule?.id) { mutableStateOf(rule?.symptomKey.orEmpty()) }
+    var medicalTerm by remember(rule?.id) { mutableStateOf(rule?.medicalTerm.orEmpty()) }
+    var clarifyingQ by remember(rule?.id) { mutableStateOf(rule?.clarifyingQuestions.orEmpty()) }
+    var answerTriggers by remember(rule?.id) { mutableStateOf(rule?.answerTriggers.orEmpty()) }
     val focusManager = LocalFocusManager.current
-    val scrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (rule == null) "Добавить правило" else "Редактировать правило") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { focusManager.clearFocus() }
-                    ),
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = symptomKey,
                     onValueChange = { symptomKey = it },
-                    label = { Text("Ключевое слово") },
+                    label = { Text("Ключевая фраза") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
@@ -479,20 +588,9 @@ fun RuleEditorDialog(
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
                 OutlinedTextField(
-                    value = probabilityWeight,
-                    onValueChange = { probabilityWeight = it.filter { c -> c.isDigit() } },
-                    label = { Text("Вес правила (0–100)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-                )
-                OutlinedTextField(
                     value = clarifyingQ,
                     onValueChange = { clarifyingQ = it },
-                    label = { Text("Уточняющие вопросы (разделяйте ;)") },
+                    label = { Text("Уточняющие вопросы (через ;)") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
@@ -505,25 +603,49 @@ fun RuleEditorDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
                 )
+                Text(
+                    "Legacy-вес правила скрыт: он не влияет на текущий disease ranking и не редактируется врачом или администратором.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
-            Button(onClick = {
-                focusManager.clearFocus()
-                onSave(
-                    RuleEntity(
-                        id = rule?.id ?: 0,
-                        symptomKey = symptomKey,
-                        medicalTerm = medicalTerm,
-                        probabilityWeight = probabilityWeight.toIntOrNull() ?: 0,
-                        clarifyingQuestions = clarifyingQ.takeIf { it.isNotBlank() },
-                        answerTriggers = answerTriggers.takeIf { it.isNotBlank() }
+            Button(
+                enabled = symptomKey.isNotBlank() && medicalTerm.isNotBlank(),
+                onClick = {
+                    onSave(
+                        RuleEntity(
+                            id = rule?.id ?: 0,
+                            symptomKey = symptomKey.trim(),
+                            medicalTerm = medicalTerm.trim(),
+                            probabilityWeight = rule?.probabilityWeight ?: 0,
+                            clarifyingQuestions = clarifyingQ.trim().takeIf { it.isNotBlank() },
+                            answerTriggers = answerTriggers.trim().takeIf { it.isNotBlank() }
+                        )
                     )
-                )
-            }) { Text("Сохранить") }
+                }
+            ) { Text("Сохранить") }
         },
-        dismissButton = {
-            Button(onClick = onDismiss) { Text("Отмена") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
+}
+
+private fun assessmentStatusLabel(status: String): String = when (status) {
+    "INSUFFICIENT_EVIDENCE" -> "Недостаточно данных"
+    "RANKED" -> "Есть ranking"
+    "OUT_OF_SCOPE" -> "Вне области модели"
+    "MODEL_UNAVAILABLE" -> "Модель недоступна"
+    "ALL" -> "Все оценки"
+    else -> status
+}
+
+private fun workflowLabel(status: String): String = when (status) {
+    AssessmentWorkflow.NEW -> "Новое"
+    AssessmentWorkflow.REVIEWED -> "Просмотрено"
+    AssessmentWorkflow.CONTACT_REQUIRED -> "Нужно связаться"
+    AssessmentWorkflow.CONTACTED -> "Связались"
+    AssessmentWorkflow.CLOSED -> "Закрыто"
+    "ALL" -> "Все статусы"
+    else -> status
 }

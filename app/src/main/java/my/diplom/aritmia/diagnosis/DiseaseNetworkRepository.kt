@@ -36,6 +36,9 @@ class DiseaseNetworkRepository(private val context: Context) {
         private const val MODEL_TYPE = "aritmia_symptom_multiclass_mlp"
         private const val FORMAT_VERSION = 1
 
+        const val MODEL_VERSION = "v2"
+        const val EXTRACTOR_VERSION = "russian-complaint-v3"
+
         // Консервативный evidence gate, а не confidence/OOD threshold.
         // Исследовательская OOF-проверка показала заметно более устойчивое ранжирование
         // для профилей с 4+ complaint-derived concepts. Профили с 1–3 concepts поэтому
@@ -60,9 +63,6 @@ class DiseaseNetworkRepository(private val context: Context) {
                 outputDiseaseIds = loaded.second
                 pretrained = true
             } else {
-                // Не подменяем production-модель синтетической runtime-моделью.
-                // При повреждённом/отсутствующем asset приложение должно отказаться
-                // от ранжирования и явно сообщить о недоступности модели.
                 network = null
                 outputDiseaseIds = emptyList()
                 pretrained = false

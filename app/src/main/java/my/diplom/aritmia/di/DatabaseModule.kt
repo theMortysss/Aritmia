@@ -22,11 +22,13 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "app_database")
-            .addMigrations(AppDatabase.MIGRATION_6_7)
+            .addMigrations(AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8)
             .build()
 
     @Provides fun provideUserDao(db: AppDatabase) = db.userDao()
     @Provides fun provideSymptomDao(db: AppDatabase) = db.symptomDao()
+    @Provides fun provideAssessmentDao(db: AppDatabase) = db.assessmentDao()
+    @Provides fun provideAuditEventDao(db: AppDatabase) = db.auditEventDao()
     @Provides fun provideRuleDao(db: AppDatabase) = db.ruleDao()
 
     @Provides
