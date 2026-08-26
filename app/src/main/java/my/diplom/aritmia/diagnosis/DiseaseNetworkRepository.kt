@@ -6,11 +6,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
-import kotlin.random.Random
 
 enum class DiseaseAssessmentStatus {
     OUT_OF_SCOPE,
     INSUFFICIENT_EVIDENCE,
+    MODEL_UNAVAILABLE,
     RANKED
 }
 
@@ -45,30 +45,27 @@ class DiseaseNetworkRepository(private val context: Context) {
     @Volatile private var network: DiseaseNeuralNetwork? = null
     @Volatile private var outputDiseaseIds: List<String> = emptyList()
     @Volatile private var pretrained: Boolean = false
+    @Volatile private var initializationAttempted: Boolean = false
 
     suspend fun initialize() = withContext(Dispatchers.Default) {
-        if (network != null) return@withContext
+        if (initializationAttempted) return@withContext
         synchronized(this@DiseaseNetworkRepository) {
-            if (network != null) return@synchronized
+            if (initializationAttempted) return@synchronized
 
             val loaded = loadPretrainedModel()
             if (loaded != null) {
                 network = loaded.first
                 outputDiseaseIds = loaded.second
                 pretrained = true
-                return@synchronized
+            } else {
+                // Не подменяем production-модель синтетической runtime-моделью.
+                // При повреждённом/отсутствующем asset приложение должно отказаться
+                // от ранжирования и явно сообщить о недоступности модели.
+                network = null
+                outputDiseaseIds = emptyList()
+                pretrained = false
             }
-
-            val definitions = DiseaseCatalog.definitions
-            val model = DiseaseNeuralNetwork(
-                inputSize = DiseaseCatalog.concepts.size,
-                hiddenSize = 36,
-                outputSize = definitions.size
-            )
-            model.train(generateBootstrapSamples())
-            network = model
-            outputDiseaseIds = definitions.map { it.id }
-            pretrained = false
+            initializationAttempted = true
         }
     }
 
@@ -95,13 +92,13 @@ class DiseaseNetworkRepository(private val context: Context) {
 
         initialize()
         val model = network ?: return@withContext DiseaseAssessment(
-            status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
+            status = DiseaseAssessmentStatus.MODEL_UNAVAILABLE,
             recognizedConceptIds = concepts
         )
         val outputs = outputDiseaseIds
         if (outputs.size != model.outputSize) {
             return@withContext DiseaseAssessment(
-                status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
+                status = DiseaseAssessmentStatus.MODEL_UNAVAILABLE,
                 recognizedConceptIds = concepts
             )
         }
@@ -190,44 +187,11 @@ class DiseaseNetworkRepository(private val context: Context) {
         model.loadWeights(snapshot)
         model to snapshot.outputDiseaseIds
     }.getOrElse { error ->
-        android.util.Log.w("DiseaseNetwork", "Pretrained model unavailable; using bootstrap fallback", error)
+        android.util.Log.e(
+            "DiseaseNetwork",
+            "Pretrained disease model unavailable; classification disabled",
+            error
+        )
         null
-    }
-
-    /** Fallback development data only. */
-    private fun generateBootstrapSamples(samplesPerDisease: Int = 90): List<DiseaseTrainingSample> {
-        val rng = Random(20260824)
-        val concepts = DiseaseCatalog.concepts
-        val indexByConcept = concepts.mapIndexed { index, concept -> concept.id to index }.toMap()
-        val definitions = DiseaseCatalog.definitions
-        val allConceptIds = concepts.map { it.id }
-        val samples = mutableListOf<DiseaseTrainingSample>()
-
-        definitions.forEachIndexed { labelIndex, disease ->
-            val diseaseConcepts = disease.conceptWeights.keys.toList()
-            repeat(samplesPerDisease) {
-                val vector = DoubleArray(concepts.size)
-                val anchors = disease.conceptWeights.entries
-                    .sortedByDescending { entry -> entry.value }
-                    .take(3)
-                    .map { entry -> entry.key }
-                anchors.random(rng).let { id -> indexByConcept[id]?.let { vector[it] = 1.0 } }
-
-                disease.conceptWeights.forEach { (id, weight) ->
-                    val probability = (0.22 + 0.62 * weight).coerceIn(0.15, 0.9)
-                    if (rng.nextDouble() < probability) {
-                        indexByConcept[id]?.let { vector[it] = 1.0 }
-                    }
-                }
-                repeat(rng.nextInt(0, 3)) {
-                    val noise = allConceptIds.random(rng)
-                    if (noise !in diseaseConcepts && rng.nextDouble() < 0.55) {
-                        indexByConcept[noise]?.let { vector[it] = 1.0 }
-                    }
-                }
-                samples += DiseaseTrainingSample(vector, labelIndex)
-            }
-        }
-        return samples.shuffled(rng)
     }
 }
