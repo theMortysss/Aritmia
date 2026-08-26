@@ -17,7 +17,6 @@ import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.SymptomEntity
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.admin.AdminScreen
 import my.diplom.aritmia.ui.screen.clarify.ClarifyScreen
@@ -33,7 +32,6 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var db: AppDatabase
-    @Inject lateinit var networkRepository: NetworkRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,11 +99,6 @@ class MainActivity : ComponentActivity() {
                 composable("login") {
                     LoginScreen(
                         onLoginSuccess = { user ->
-                            scope.launch {
-                                if (!networkRepository.isReady()) {
-                                    networkRepository.initialize(db.ruleDao().getAllRules())
-                                }
-                            }
                             when (user.role) {
                                 Role.PATIENT -> {
                                     sharedViewModel.setData(emptyList(), user.id)
@@ -164,9 +157,6 @@ class MainActivity : ComponentActivity() {
                                     val patient = db.userDao().getPatientById(userId) ?: return@launch
                                     val rules = db.ruleDao().getAllRules()
 
-                                    val nnRaw = networkRepository.predict(symptoms)
-                                    val nnProb = nnRaw?.let { (it * 100).toInt().coerceIn(0, 100) } ?: 0
-
                                     val medTerms = symptoms.mapNotNull { s ->
                                         resolveSymptomTerm(s, rules, answers).medicalTerm
                                     }.joinToString(", ")
@@ -175,14 +165,14 @@ class MainActivity : ComponentActivity() {
                                         SymptomEntity(
                                             userInput = symptoms.joinToString(". "),
                                             medicalTerm = medTerms.ifBlank { null },
-                                            probability = nnProb,
+                                            probability = 0,
                                             patientId = patient.id,
                                             clarifyingAnswers = answers.entries
                                                 .filter { it.value.any { a -> a.isNotBlank() } }
                                                 .joinToString(";") {
                                                     "${it.key}=${it.value.joinToString(",")}"
                                                 },
-                                            nnProbability = nnProb
+                                            nnProbability = null
                                         )
                                     )
                                     sharedViewModel.updateAnswers(answers)
