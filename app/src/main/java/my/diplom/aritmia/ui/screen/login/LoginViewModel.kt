@@ -91,7 +91,12 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             // Администратор по-прежнему может войти независимо от выбранной вкладки.
             val admin = db.userDao().getUserByPhoneAndRole(formattedPhone, Role.ADMIN)
-            if (admin != null && verifyAndUpgradePassword(admin, password)) {
+            val adminPasswordMatches = admin != null && verifyAndUpgradePassword(admin, password)
+            if (adminPasswordMatches) {
+                if (!admin!!.isActive) {
+                    _state.update { it.copy(errorMessage = "Учётная запись заблокирована администратором") }
+                    return@launch
+                }
                 saveSession(admin)
                 _state.update { it.copy(loginSuccess = admin, errorMessage = null) }
                 return@launch
@@ -100,8 +105,13 @@ class LoginViewModel @Inject constructor(
             val user = if (selectedRole != Role.ADMIN) {
                 db.userDao().getUserByPhoneAndRole(formattedPhone, selectedRole)
             } else null
+            val userPasswordMatches = user != null && verifyAndUpgradePassword(user, password)
 
-            if (user != null && verifyAndUpgradePassword(user, password)) {
+            if (userPasswordMatches) {
+                if (!user!!.isActive) {
+                    _state.update { it.copy(errorMessage = "Учётная запись заблокирована администратором") }
+                    return@launch
+                }
                 saveSession(user)
                 _state.update { it.copy(loginSuccess = user, errorMessage = null) }
             } else {
@@ -125,7 +135,7 @@ class LoginViewModel @Inject constructor(
             _state.update { it.copy(errorMessage = "Регистрация врачей запрещена") }
             return
         }
-        if (!fullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*\$"))) {
+        if (!fullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*$"))) {
             _state.update { it.copy(errorMessage = "ФИО должно содержать только буквы, слова с заглавной буквы") }
             return
         }
@@ -158,7 +168,8 @@ class LoginViewModel @Inject constructor(
                 role = role,
                 gender = if (role == Role.PATIENT) _state.value.gender else null,
                 age = if (role == Role.PATIENT) age.toIntOrNull() else null,
-                specialty = if (role == Role.DOCTOR) _state.value.specialty else null
+                specialty = if (role == Role.DOCTOR) _state.value.specialty else null,
+                isActive = true
             )
             db.userDao().insert(newUser)
             val insertedUser = db.userDao().getUserByPhoneAndRole(formattedPhone, role)
