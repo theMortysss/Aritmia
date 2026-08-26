@@ -11,16 +11,34 @@ object FreeTextSymptomExtractor {
         val matchedPhrases: Map<String, List<String>>
     )
 
+    /**
+     * Small research-driven lexical supplements for common natural Russian forms.
+     * They remain complaint-text aliases only; no structured clinical inputs are added.
+     */
+    private val supplementalAliases = mapOf(
+        "chest_pain" to listOf("боли в груди"),
+        "dyspnea" to listOf("нехватка воздуха", "нехватки воздуха", "трудно дышать"),
+        "syncope" to listOf("потерял сознание", "потеряла сознание", "терял сознание", "теряла сознание"),
+        "pleuritic_pain" to listOf(
+            "когда вдыхаю боль в груди усиливается",
+            "при вдохе боль усиливается",
+            "боль усиливается на вдохе"
+        )
+    )
+
     fun extract(texts: List<String>): Extraction {
         val normalizedInputs = texts
             .flatMap { splitComplaint(it) }
             .map(::normalize)
             .filter { it.length >= 3 }
+            .distinct()
 
         val matched = linkedMapOf<String, MutableList<String>>()
 
         DiseaseCatalog.concepts.forEach { concept ->
-            val aliases = (concept.aliases + concept.label).map(::normalize)
+            val aliases = (
+                concept.aliases + concept.label + supplementalAliases[concept.id].orEmpty()
+            ).map(::normalize)
             normalizedInputs.forEach { input ->
                 aliases.forEach { alias ->
                     if (matches(input, alias) && !isNegated(input, alias)) {
@@ -44,12 +62,54 @@ object FreeTextSymptomExtractor {
         }
     }
 
-    private fun splitComplaint(raw: String): List<String> = raw
-        .replace(';', '.')
-        .replace(',', '.')
-        .split('.')
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
+    /**
+     * Commas normally separate independent complaint fragments, which prevents a word in
+     * one clause from completing a symptom alias in another. Two narrow exceptions preserve
+     * semantics that Russian users commonly express across punctuation:
+     * - breathing context + the immediately following pain clause;
+     * - coordinated pain locations such as "боль в груди, спине и животе".
+     */
+    private fun splitComplaint(raw: String): List<String> {
+        val clauses = raw
+            .replace(';', '.')
+            .replace(',', '.')
+            .split('.')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val result = clauses.toMutableList()
+        for (i in 0 until clauses.lastIndex) {
+            val context = normalize(clauses[i])
+            if (context.contains("вдыхаю") || context.contains("на вдохе") || context.contains("при вдохе")) {
+                result += "${clauses[i]} ${clauses[i + 1]}"
+            }
+        }
+        result += expandCoordinatedPain(raw)
+        return result.distinct()
+    }
+
+    private fun expandCoordinatedPain(raw: String): List<String> {
+        val normalized = raw.lowercase().replace('ё', 'е')
+        val pattern = Regex("\\bболь\\s+в\\s+([а-я]+)(?:\\s*,\\s*([а-я]+))?\\s+и\\s+([а-я]+)\\b")
+        val locationToPhrase = mapOf(
+            "груди" to "боль в груди",
+            "спине" to "боль в спине",
+            "животе" to "боль в животе",
+            "руке" to "боль в руке",
+            "ноге" to "боль в ноге",
+            "шее" to "боль в шее",
+            "плече" to "боль в плече",
+            "челюсти" to "боль в челюсти",
+            "лодыжке" to "боль в лодыжке",
+            "ребрах" to "боль в ребрах"
+        )
+
+        return pattern.findAll(normalized).flatMap { match ->
+            listOf(match.groupValues[1], match.groupValues[2], match.groupValues[3])
+                .filter { it.isNotBlank() }
+                .mapNotNull { locationToPhrase[it] }
+        }.toList()
+    }
 
     private fun normalize(value: String): String = value
         .lowercase()
@@ -66,7 +126,7 @@ object FreeTextSymptomExtractor {
      * We therefore accept only:
      * 1) an exact/whole-phrase occurrence; or
      * 2) all meaningful words of a multi-word alias, allowing harmless word reordering
-     *    such as "пульс частый" vs "частый пульс".
+     *    and conservative adjective inflection normalization (редкий/редким, частый/частым).
      */
     private fun matches(input: String, alias: String): Boolean {
         if (input == alias) return true
@@ -81,7 +141,25 @@ object FreeTextSymptomExtractor {
     private fun meaningfulWords(value: String): Set<String> = value
         .split(' ')
         .filter { it.length >= 4 }
+        .map(::canonicalWord)
         .toSet()
+
+    /**
+     * Conservative adjective-ending normalization only. It is deliberately not a general
+     * Russian stemmer: single-word aliases still require exact phrase matching, so this
+     * cannot turn a generic inflected word into a symptom by itself.
+     */
+    private fun canonicalWord(word: String): String {
+        val endings = listOf(
+            "ыми", "ими", "ого", "его", "ому", "ему", "ую", "юю",
+            "ый", "ий", "ой", "ая", "яя", "ое", "ее", "ые", "ие",
+            "ым", "им", "ом", "ем", "ых", "их"
+        )
+        val ending = endings.firstOrNull { suffix ->
+            word.endsWith(suffix) && word.length - suffix.length >= 4
+        }
+        return if (ending == null) word else word.dropLast(ending.length)
+    }
 
     /**
      * Conservative Russian negation handling. We suppress a matched symptom when the
@@ -108,6 +186,17 @@ object FreeTextSymptomExtractor {
             if (words[i] == "не" && words[i + 1] in negatedVerbs) {
                 val nearby = words.subList((i - 3).coerceAtLeast(0), (i + 4).coerceAtMost(words.size)).toSet()
                 if (nearby.intersect(aliasWords).isNotEmpty()) return true
+            }
+        }
+
+        // Specific descriptor negation. Do not generalize this to every "не": phrases such
+        // as "не хватает воздуха" are positive symptom expressions by design.
+        val negatableDescriptors = setOf("редк", "част", "высок")
+        val canonicalAliasWords = meaningfulWords(alias)
+        for (i in 0 until words.lastIndex) {
+            if (words[i] == "не") {
+                val next = canonicalWord(words[i + 1])
+                if (next in negatableDescriptors && next in canonicalAliasWords) return true
             }
         }
         return false
