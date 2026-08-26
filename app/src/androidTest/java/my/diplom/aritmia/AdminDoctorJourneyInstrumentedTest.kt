@@ -1,10 +1,11 @@
 package my.diplom.aritmia
 
 import android.content.Context
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -78,7 +79,7 @@ class AdminDoctorJourneyInstrumentedTest {
         var scenario: ActivityScenario<MainActivity>? = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitForText("Админ панель", "admin control center")
-            composeRule.onNodeWithText("Пользователи").performClick()
+            clickExactText("Пользователи")
             waitForText("Добавить пользователя", "users tab")
 
             replaceEditableField(0, patientName)
@@ -89,7 +90,7 @@ class AdminDoctorJourneyInstrumentedTest {
                     .fetchSemanticsNodes().isEmpty()
             )
 
-            composeRule.onNodeWithText("Заблокировать").performClick()
+            clickExactText("Заблокировать")
             waitForText("Статус: заблокирован", "blocked user state")
 
             val blocked = runBlocking {
@@ -102,7 +103,7 @@ class AdminDoctorJourneyInstrumentedTest {
                     .any { it.action == "USER_BLOCK" && it.entityId == patient.id.toString() }
             )
 
-            composeRule.onNodeWithText("Правила").performClick()
+            clickExactText("Правила")
             waitForText("Добавить правило", "admin rules tab")
             assertTrue(
                 "Legacy rule weight editor must not be available to admin",
@@ -121,7 +122,7 @@ class AdminDoctorJourneyInstrumentedTest {
 
             replaceEditableField(0, patientPhone)
             replaceEditableField(1, patientPassword)
-            composeRule.onNodeWithText("Войти").performClick()
+            clickExactText("Войти")
             waitForText(
                 "Учётная запись заблокирована администратором",
                 "blocked patient login"
@@ -189,15 +190,13 @@ class AdminDoctorJourneyInstrumentedTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             waitForText("Меню врача", "doctor workspace")
             waitForText(patientName, "doctor assessment queue")
-            composeRule.onAllNodesWithText("Открыть обращение")[0].performClick()
+            clickExactText("Открыть обращение")
             waitForText("Обращение пациента", "assessment details")
             waitForText("История пациента", "patient assessment timeline")
             waitForText("Недостаточно данных", "frozen assessment status")
 
             replaceEditableField(0, "Пациенту рекомендована очная консультация")
-            composeRule.onNodeWithText("Просмотрено")
-                .performScrollTo()
-                .performClick()
+            clickExactText("Просмотрено", scrollTo = true)
             waitForText("Текущий статус: Просмотрено", "saved doctor workflow")
 
             val updated = runBlocking { db.assessmentDao().getById(assessment.id) }!!
@@ -208,10 +207,10 @@ class AdminDoctorJourneyInstrumentedTest {
             assertEquals(assessment.recognizedConceptIds, updated.recognizedConceptIds)
             assertEquals(assessment.modelVersion, updated.modelVersion)
 
-            composeRule.onNodeWithText("Закрыть").performClick()
-            composeRule.onNodeWithText("Правила").performClick()
+            clickExactText("Закрыть")
+            clickExactText("Правила")
             waitForText("Добавить правило", "doctor rules workspace")
-            composeRule.onNodeWithText("Добавить правило").performClick()
+            clickExactText("Добавить правило")
             waitForText("Добавить правило", "doctor rule dialog")
             assertTrue(
                 "Legacy rule weight editor must not be available to doctor",
@@ -244,6 +243,12 @@ class AdminDoctorJourneyInstrumentedTest {
             )
         )
         db.userDao().getUserByPhoneAndRole(formatted, role)!!
+    }
+
+    private fun clickExactText(text: String, scrollTo: Boolean = false) {
+        val node = composeRule.onAllNodes(hasText(text) and hasClickAction())[0]
+        if (scrollTo) node.performScrollTo()
+        node.performClick()
     }
 
     private fun replaceEditableField(index: Int, value: String) {
