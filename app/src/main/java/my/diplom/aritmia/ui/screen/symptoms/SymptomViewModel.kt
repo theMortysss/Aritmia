@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.SymptomEntity
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenIntent
 import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenState
 import java.time.LocalDateTime
@@ -24,7 +23,6 @@ import javax.inject.Inject
 @HiltViewModel
 class SymptomsViewModel @Inject constructor(
     private val db: AppDatabase,
-    private val networkRepository: NetworkRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -32,23 +30,18 @@ class SymptomsViewModel @Inject constructor(
     val state: StateFlow<SymptomsScreenState> = _state.asStateFlow()
 
     init {
-        val prefs     = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val patientId = prefs.getInt("current_patient_id", -1)
         _state.update { it.copy(patientId = patientId) }
 
         viewModelScope.launch {
             val rules = db.ruleDao().getAllRules()
             _state.update { it.copy(rules = rules, isLoading = false) }
-
-            if (!networkRepository.isReady()) {
-                networkRepository.initialize(rules)
-            }
         }
     }
 
     fun onIntent(intent: SymptomsScreenIntent) {
         when (intent) {
-
             is SymptomsScreenIntent.UpdateNewSymptom -> {
                 val suggestions = if (intent.newSymptom.isNotBlank()) {
                     _state.value.rules
@@ -69,8 +62,8 @@ class SymptomsViewModel @Inject constructor(
                 if (s.isNotBlank()) {
                     _state.update {
                         it.copy(
-                            symptoms    = it.symptoms + s,
-                            newSymptom  = "",
+                            symptoms = it.symptoms + s,
+                            newSymptom = "",
                             suggestions = emptyList(),
                             isDiagnosed = false
                         )
@@ -85,9 +78,9 @@ class SymptomsViewModel @Inject constructor(
                 val toDelete = _state.value.showDeleteDialog ?: return
                 _state.update {
                     it.copy(
-                        symptoms        = it.symptoms.filter { s -> s != toDelete },
+                        symptoms = it.symptoms.filter { s -> s != toDelete },
                         showDeleteDialog = null,
-                        isDiagnosed     = false
+                        isDiagnosed = false
                     )
                 }
             }
@@ -96,14 +89,14 @@ class SymptomsViewModel @Inject constructor(
                 _state.update { it.copy(showDeleteDialog = null) }
 
             is SymptomsScreenIntent.Diagnose -> {
-                val symptoms  = _state.value.symptoms
-                val rules     = _state.value.rules
+                val symptoms = _state.value.symptoms
+                val rules = _state.value.rules
                 val patientId = _state.value.patientId
 
                 val hasQuestions = symptoms.any { symptom ->
                     rules.any { rule ->
                         symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                rule.clarifyingQuestions != null
+                            rule.clarifyingQuestions != null
                     }
                 }
 
@@ -116,10 +109,6 @@ class SymptomsViewModel @Inject constructor(
                             return@launch
                         }
                         if (!_state.value.isDiagnosed) {
-                            val nnRaw = networkRepository.predict(symptoms)
-                            val nnProbability = nnRaw?.let { (it * 100).toInt().coerceIn(0, 100) } ?: 0
-
-                            // Получаем медицинские термины через маппинг правил
                             val medicalTerms = symptoms.mapNotNull { symptom ->
                                 rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
                                     ?.medicalTerm
@@ -127,13 +116,13 @@ class SymptomsViewModel @Inject constructor(
 
                             db.symptomDao().insert(
                                 SymptomEntity(
-                                    userInput        = symptoms.joinToString(". "),
-                                    medicalTerm      = medicalTerms.ifBlank { null },
-                                    probability      = nnProbability,
-                                    patientId        = patientId,
+                                    userInput = symptoms.joinToString(". "),
+                                    medicalTerm = medicalTerms.ifBlank { null },
+                                    probability = 0,
+                                    patientId = patientId,
                                     clarifyingAnswers = null,
-                                    createdAt        = LocalDateTime.now(),
-                                    nnProbability    = nnProbability
+                                    createdAt = LocalDateTime.now(),
+                                    nnProbability = null
                                 )
                             )
                             _state.update { it.copy(navigateToDiagnose = true, isDiagnosed = true) }
