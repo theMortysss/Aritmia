@@ -8,6 +8,7 @@ on:
       - .github/workflows/abstention-evaluation.yml
       - ml/**
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedRussianOodExtractionTest.kt
+      - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedScopeBoundaryExtractionTest.kt
   workflow_dispatch:
 
 concurrency:
@@ -38,11 +39,16 @@ jobs:
         run: |
           ./gradlew testDebugUnitTest \
             --tests my.diplom.aritmia.diagnosis.CuratedRussianOodExtractionTest \
+            --tests my.diplom.aritmia.diagnosis.CuratedScopeBoundaryExtractionTest \
             --stacktrace --no-daemon
           CURATED_JSON="$(find app/build build -type f -name 'curated_russian_ood_extractions.json' -print -quit 2>/dev/null || true)"
+          BOUNDARY_JSON="$(find app/build build -type f -name 'curated_scope_boundary_extractions.json' -print -quit 2>/dev/null || true)"
           test -n "$CURATED_JSON"
+          test -n "$BOUNDARY_JSON"
           echo "CURATED_JSON=$CURATED_JSON" >> "$GITHUB_ENV"
+          echo "BOUNDARY_JSON=$BOUNDARY_JSON" >> "$GITHUB_ENV"
           cat "$CURATED_JSON"
+          cat "$BOUNDARY_JSON"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -111,6 +117,13 @@ jobs:
             --curated-json "$CURATED_JSON" \
             --output curated_text_scope_report.json
 
+      - name: Evaluate positive and hard-boundary Russian complaints
+        run: |
+          python ml/evaluate_curated_scope_boundary.py \
+            --csv "$CSV_PATH" \
+            --cases-json "$BOUNDARY_JSON" \
+            --output curated_scope_boundary_report.json
+
       - name: Upload abstention reports
         uses: actions/upload-artifact@v4
         with:
@@ -120,5 +133,7 @@ jobs:
             evidence_gate_report.json
             scope_detector_report.json
             curated_text_scope_report.json
+            curated_scope_boundary_report.json
             ${{ env.CURATED_JSON }}
+            ${{ env.BOUNDARY_JSON }}
           if-no-files-found: error
