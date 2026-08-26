@@ -2,13 +2,11 @@ package my.diplom.aritmia
 
 import android.content.Context
 import android.os.SystemClock
-import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -194,7 +192,16 @@ class AdminDoctorJourneyInstrumentedTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             waitForText("Меню врача", "doctor workspace")
             waitForText(patientName, "doctor assessment queue")
-            clickAssessmentForPatient(patientName)
+
+            // The instrumentation database is shared by the suite. Filter the queue first so
+            // the generic open button belongs to this test's patient, not another assessment.
+            clickExactText("Фильтры")
+            waitForText("Фильтры обращений", "doctor filters")
+            replaceEditableField(1, patientName)
+            clickExactText("Применить")
+            waitForText(patientName, "filtered doctor assessment queue")
+
+            clickExactText("Открыть обращение")
             waitForText("Обращение пациента", "assessment details")
             waitForText("История пациента", "patient assessment timeline")
             waitForText("Недостаточно данных", "frozen assessment status")
@@ -215,7 +222,7 @@ class AdminDoctorJourneyInstrumentedTest {
 
             // Re-open from persisted state instead of depending on Flow/UI refresh timing.
             clickExactText("Закрыть")
-            clickAssessmentForPatient(patientName)
+            clickExactText("Открыть обращение")
             waitForText("Текущий статус: Просмотрено", "reopened saved doctor workflow")
 
             clickExactText("Закрыть")
@@ -271,14 +278,6 @@ class AdminDoctorJourneyInstrumentedTest {
         throw AssertionError(
             "Timed out waiting for assessment #$assessmentId workflow '$expectedStatus'; actual='$actual'"
         )
-    }
-
-    private fun clickAssessmentForPatient(patientName: String) {
-        composeRule.onNode(
-            hasText("Открыть обращение") and
-                hasClickAction() and
-                hasAnySibling(hasText(patientName))
-        ).performClick()
     }
 
     private fun clickExactText(text: String, scrollTo: Boolean = false) {
