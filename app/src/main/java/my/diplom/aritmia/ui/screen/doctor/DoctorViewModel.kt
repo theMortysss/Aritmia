@@ -14,6 +14,7 @@ import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenState
 import my.diplom.aritmia.ui.screen.doctor.model.SymptomItem
+import my.diplom.aritmia.ui.screen.doctor.model.resolveDateFilterUpdate
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
@@ -49,7 +50,6 @@ class DoctorScreenViewModel @Inject constructor(
                     it.copy(
                         phoneFilter = intent.phone.trim().filter { c -> c.isDigit() },
                         nameFilter = intent.name.trim(),
-                        minProbability = intent.minProbability,
                         startDate = intent.startDate,
                         endDate = intent.endDate,
                         page = 0
@@ -63,9 +63,8 @@ class DoctorScreenViewModel @Inject constructor(
                     it.copy(
                         tempPhoneFilter = intent.phone?.filter { c -> c.isDigit() } ?: it.tempPhoneFilter,
                         tempNameFilter = intent.name?.trim() ?: it.tempNameFilter,
-                        tempMinProbability = intent.minProbability ?: it.tempMinProbability,
-                        tempStartDate = intent.startDate ?: it.tempStartDate,
-                        tempEndDate = intent.endDate ?: it.tempEndDate
+                        tempStartDate = resolveDateFilterUpdate(it.tempStartDate, intent.startDate),
+                        tempEndDate = resolveDateFilterUpdate(it.tempEndDate, intent.endDate)
                     )
                 }
 
@@ -74,7 +73,6 @@ class DoctorScreenViewModel @Inject constructor(
                     it.copy(
                         tempPhoneFilter = "",
                         tempNameFilter = "",
-                        tempMinProbability = 0,
                         tempStartDate = null,
                         tempEndDate = null
                     )
@@ -86,7 +84,6 @@ class DoctorScreenViewModel @Inject constructor(
                         showFilterSheet = true,
                         tempPhoneFilter = it.phoneFilter,
                         tempNameFilter = it.nameFilter,
-                        tempMinProbability = it.minProbability,
                         tempStartDate = it.startDate,
                         tempEndDate = it.endDate
                     )
@@ -126,9 +123,11 @@ class DoctorScreenViewModel @Inject constructor(
                     db.symptomDao().updateCalledByDoctor(intent.symptomId, intent.called)
                     _state.update {
                         it.copy(symptoms = it.symptoms.map { item ->
-                            if (item.symptom.id == intent.symptomId)
+                            if (item.symptom.id == intent.symptomId) {
                                 item.copy(symptom = item.symptom.copy(calledByDoctor = intent.called))
-                            else item
+                            } else {
+                                item
+                            }
                         })
                     }
                 }
@@ -144,7 +143,7 @@ class DoctorScreenViewModel @Inject constructor(
             val symptoms = db.symptomDao().getSymptomsFiltered(
                 phoneFilter = _state.value.phoneFilter,
                 nameFilter = _state.value.nameFilter,
-                minProbability = _state.value.minProbability,
+                minProbability = 0,
                 startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                 endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                 limit = pageSize,
@@ -154,7 +153,7 @@ class DoctorScreenViewModel @Inject constructor(
             val totalCount = db.symptomDao().getFilteredCount(
                 phoneFilter = _state.value.phoneFilter,
                 nameFilter = _state.value.nameFilter,
-                minProbability = _state.value.minProbability,
+                minProbability = 0,
                 startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                 endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             )
