@@ -246,7 +246,10 @@ class AdminDoctorJourneyInstrumentedTest {
     }
 
     private fun clickExactText(text: String, scrollTo: Boolean = false) {
-        val node = composeRule.onAllNodes(hasText(text) and hasClickAction())[0]
+        val nodes = composeRule.onAllNodes(hasText(text) and hasClickAction())
+        val count = nodes.fetchSemanticsNodes().size
+        check(count > 0) { "No clickable node found with exact text '$text'" }
+        val node = nodes[count - 1]
         if (scrollTo) node.performScrollTo()
         node.performClick()
     }
