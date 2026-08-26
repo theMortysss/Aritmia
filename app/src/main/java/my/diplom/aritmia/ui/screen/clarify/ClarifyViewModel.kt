@@ -12,15 +12,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenIntent
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenState
 import javax.inject.Inject
 
 @HiltViewModel
 class ClarifyViewModel @Inject constructor(
-    private val db: AppDatabase,
-    private val networkRepository: NetworkRepository
+    private val db: AppDatabase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ClarifyScreenState())
@@ -32,9 +30,9 @@ class ClarifyViewModel @Inject constructor(
             is ClarifyScreenIntent.Initialize -> {
                 _state.update {
                     it.copy(
-                        symptoms  = intent.symptoms,
-                        userId    = intent.userId,
-                        answers   = intent.initialAnswers.toMutableMap()
+                        symptoms = intent.symptoms,
+                        userId = intent.userId,
+                        answers = intent.initialAnswers.toMutableMap()
                             .mapValues { e -> e.value.toMutableList() },
                         isLoading = true
                     )
@@ -42,9 +40,6 @@ class ClarifyViewModel @Inject constructor(
                 viewModelScope.launch {
                     val rules = db.ruleDao().getAllRules()
                     _state.update { it.copy(rules = rules, isLoading = false) }
-                    if (!networkRepository.isReady()) {
-                        networkRepository.initialize(rules)
-                    }
                 }
             }
 
@@ -65,8 +60,6 @@ class ClarifyViewModel @Inject constructor(
         }
     }
 }
-
-// ── Вспомогательная функция ─────────────
 
 data class SymptomTermResult(
     val userInput: String,
