@@ -7,6 +7,7 @@ import my.diplom.aritmia.data.User
 sealed class AdminScreenIntent {
     object LoadData : AdminScreenIntent()
     data class ChangeTab(val tabIndex: Int) : AdminScreenIntent()
+    data class UpdateUserSearch(val query: String) : AdminScreenIntent()
     data class SelectUser(val user: User?) : AdminScreenIntent()
     data class SelectRule(val rule: RuleEntity?) : AdminScreenIntent()
     object ShowUserEditor : AdminScreenIntent()
@@ -15,6 +16,7 @@ sealed class AdminScreenIntent {
     object HideRuleEditor : AdminScreenIntent()
     data class SaveUser(val user: User) : AdminScreenIntent()
     data class DeleteUser(val user: User) : AdminScreenIntent()
+    data class SetUserActive(val user: User, val active: Boolean) : AdminScreenIntent()
     data class SaveRule(val rule: RuleEntity) : AdminScreenIntent()
     data class DeleteRule(val rule: RuleEntity) : AdminScreenIntent()
     object Logout : AdminScreenIntent()

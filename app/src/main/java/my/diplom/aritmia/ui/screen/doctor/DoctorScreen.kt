@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -335,7 +336,10 @@ private fun AssessmentDetailsDialog(
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(AssessmentWorkflow.values.toList()) { workflow ->
-                        Button(onClick = { onSaveWorkflow(workflow) }) {
+                        Button(
+                            onClick = { onSaveWorkflow(workflow) },
+                            modifier = Modifier.testTag("doctor_workflow_$workflow")
+                        ) {
                             Text(workflowLabel(workflow))
                         }
                     }

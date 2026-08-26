@@ -19,7 +19,8 @@ data class User(
     val role: Role,
     val gender: String? = null,
     val age: Int? = null,
-    val specialty: String? = null
+    val specialty: String? = null,
+    val isActive: Boolean = true
 )
 
 enum class Role { PATIENT, DOCTOR, ADMIN }
@@ -57,13 +58,6 @@ data class SymptomEntity(
     val nnProbability: Int? = null
 )
 
-/**
- * Immutable diagnostic snapshot for one saved complaint submission.
- *
- * `complaints`, `recognizedConceptIds` and `modelCandidates` deliberately store the values that
- * were used/shown at assessment time. Later RuleEntity, extractor or model changes must not rewrite
- * historical assessments shown to a doctor.
- */
 @Entity(
     foreignKeys = [
         ForeignKey(
@@ -111,7 +105,6 @@ object AssessmentWorkflow {
     val values = setOf(NEW, REVIEWED, CONTACT_REQUIRED, CONTACTED, CLOSED)
 }
 
-/** Administrative mutation log. No foreign key is used intentionally so audit rows survive deletion. */
 @Entity
 @RequiresApi(Build.VERSION_CODES.O)
 data class AuditEventEntity(
@@ -277,7 +270,7 @@ interface RuleDao {
         AuditEventEntity::class,
         RuleEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
@@ -333,6 +326,12 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE User ADD COLUMN isActive INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

@@ -85,6 +85,21 @@ class AssessmentMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration8To9AddsActiveFlagAndKeepsExistingUsersActive() {
+        val db = helper.writableDatabase
+        AppDatabase.MIGRATION_7_8.migrate(db)
+        db.execSQL("INSERT INTO User(id) VALUES (1)")
+
+        AppDatabase.MIGRATION_8_9.migrate(db)
+
+        assertTrue("isActive" in columns(db, "User"))
+        db.query("SELECT isActive FROM User WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(cursor.getColumnIndexOrThrow("isActive")))
+        }
+    }
+
     private fun tableExists(db: SupportSQLiteDatabase, table: String): Boolean =
         db.query(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
