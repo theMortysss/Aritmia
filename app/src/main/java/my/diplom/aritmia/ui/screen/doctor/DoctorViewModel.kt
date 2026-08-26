@@ -14,7 +14,7 @@ import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenState
 import my.diplom.aritmia.ui.screen.doctor.model.SymptomItem
-import java.time.LocalDateTime
+import my.diplom.aritmia.ui.screen.doctor.model.resolveDateFilterUpdate
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
@@ -63,16 +63,8 @@ class DoctorScreenViewModel @Inject constructor(
                     it.copy(
                         tempPhoneFilter = intent.phone?.filter { c -> c.isDigit() } ?: it.tempPhoneFilter,
                         tempNameFilter = intent.name?.trim() ?: it.tempNameFilter,
-                        tempStartDate = if (intent.startDate == LocalDateTime.MIN) {
-                            it.tempStartDate
-                        } else {
-                            intent.startDate
-                        },
-                        tempEndDate = if (intent.endDate == LocalDateTime.MIN) {
-                            it.tempEndDate
-                        } else {
-                            intent.endDate
-                        }
+                        tempStartDate = resolveDateFilterUpdate(it.tempStartDate, intent.startDate),
+                        tempEndDate = resolveDateFilterUpdate(it.tempEndDate, intent.endDate)
                     )
                 }
 
