@@ -1,11 +1,8 @@
 package my.diplom.aritmia
 
 import android.content.Context
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -72,7 +69,7 @@ class PatientJourneyInstrumentedTest {
             threeComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             waitForText("Недостаточно признаков для ранжирования заболеваний")
-            composeRule.onNodeWithText("Распознано сердечно-сосудистых признаков: 3.").assertExists()
+            waitForText("Распознано сердечно-сосудистых признаков: 3.")
 
             val afterAbstention = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
             assertEquals(1, afterAbstention.size)
@@ -86,8 +83,7 @@ class PatientJourneyInstrumentedTest {
             fourComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             waitForText("Возможные сердечно-сосудистые состояния")
-            composeRule.onNodeWithText("Фибрилляция / трепетание предсердий", substring = true)
-                .assertExists()
+            waitForTextContaining("Фибрилляция / трепетание предсердий")
 
             val afterRanking = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
             assertEquals(2, afterRanking.size)
@@ -116,7 +112,12 @@ class PatientJourneyInstrumentedTest {
 
             ActivityScenario.launch(MainActivity::class.java).use {
                 waitForText("Симптомы пока не добавлены")
-                composeRule.onNodeWithText("Вход в приложение").assertDoesNotExist()
+                assertTrue(
+                    "A restored patient session must not return to login",
+                    composeRule.onAllNodesWithText("Вход в приложение")
+                        .fetchSemanticsNodes()
+                        .isEmpty()
+                )
                 assertEquals(patientId, prefs.getInt("current_patient_id", -1))
             }
         } finally {
@@ -162,6 +163,14 @@ class PatientJourneyInstrumentedTest {
     private fun waitForText(text: String, timeoutMillis: Long = 15_000) {
         composeRule.waitUntil(timeoutMillis) {
             composeRule.onAllNodesWithText(text, substring = false)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
+
+    private fun waitForTextContaining(text: String, timeoutMillis: Long = 15_000) {
+        composeRule.waitUntil(timeoutMillis) {
+            composeRule.onAllNodesWithText(text, substring = true)
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
