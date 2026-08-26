@@ -234,6 +234,21 @@ private fun DiseaseAssessmentCard(
                     )
                 }
 
+                DiseaseAssessmentStatus.MODEL_UNAVAILABLE -> {
+                    Text(
+                        "Модель оценки временно недоступна",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Приложение распознало сердечно-сосудистые признаки, но не смогло безопасно загрузить проверенную pretrained-модель. Ранжирование заболеваний отключено, чтобы не подменять её запасной синтетической моделью."
+                    )
+                    Text(
+                        "Повторите попытку после обновления приложения или обратитесь к врачу для оценки жалоб.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 DiseaseAssessmentStatus.RANKED -> {
                     Text(
                         "Возможные сердечно-сосудистые состояния",
