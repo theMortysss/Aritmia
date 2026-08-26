@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - master
+  push:
+    branches:
+      - verify/four-concept-evidence-gate
 
 concurrency:
   group: android-ci-${{ github.workflow }}-${{ github.ref }}
