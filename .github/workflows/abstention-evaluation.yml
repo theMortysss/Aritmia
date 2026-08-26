@@ -10,6 +10,7 @@ on:
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedRussianOodExtractionTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedScopeBoundaryExtractionTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedPretrainedMlpChallengeTest.kt
+      - app/src/test/java/my/diplom/aritmia/diagnosis/FrozenRussianRobustnessChallengeTest.kt
   workflow_dispatch:
 
 concurrency:
@@ -36,25 +37,30 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Export concepts and exact pretrained MLP challenge with real Kotlin code
+      - name: Export concepts and exact pretrained MLP challenges with real Kotlin code
         run: |
           ./gradlew testDebugUnitTest \
             --tests my.diplom.aritmia.diagnosis.CuratedRussianOodExtractionTest \
             --tests my.diplom.aritmia.diagnosis.CuratedScopeBoundaryExtractionTest \
             --tests my.diplom.aritmia.diagnosis.CuratedPretrainedMlpChallengeTest \
+            --tests my.diplom.aritmia.diagnosis.FrozenRussianRobustnessChallengeTest \
             --stacktrace --no-daemon
           CURATED_JSON="$(find app/build build -type f -name 'curated_russian_ood_extractions.json' -print -quit 2>/dev/null || true)"
           BOUNDARY_JSON="$(find app/build build -type f -name 'curated_scope_boundary_extractions.json' -print -quit 2>/dev/null || true)"
           MLP_JSON="$(find app/build build -type f -name 'pretrained_mlp_curated_report.json' -print -quit 2>/dev/null || true)"
+          ROBUSTNESS_JSON="$(find app/build build -type f -name 'frozen_russian_robustness_report.json' -print -quit 2>/dev/null || true)"
           test -n "$CURATED_JSON"
           test -n "$BOUNDARY_JSON"
           test -n "$MLP_JSON"
+          test -n "$ROBUSTNESS_JSON"
           echo "CURATED_JSON=$CURATED_JSON" >> "$GITHUB_ENV"
           echo "BOUNDARY_JSON=$BOUNDARY_JSON" >> "$GITHUB_ENV"
           echo "MLP_JSON=$MLP_JSON" >> "$GITHUB_ENV"
+          echo "ROBUSTNESS_JSON=$ROBUSTNESS_JSON" >> "$GITHUB_ENV"
           cat "$CURATED_JSON"
           cat "$BOUNDARY_JSON"
           cat "$MLP_JSON"
+          cat "$ROBUSTNESS_JSON"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -143,4 +149,5 @@ jobs:
             ${{ env.CURATED_JSON }}
             ${{ env.BOUNDARY_JSON }}
             ${{ env.MLP_JSON }}
+            ${{ env.ROBUSTNESS_JSON }}
           if-no-files-found: error
