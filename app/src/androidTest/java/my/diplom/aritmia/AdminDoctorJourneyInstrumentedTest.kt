@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -196,7 +197,9 @@ class AdminDoctorJourneyInstrumentedTest {
             waitForText("Недостаточно данных", "frozen assessment status")
 
             replaceEditableField(0, "Пациенту рекомендована очная консультация")
-            clickExactText("Просмотрено", scrollTo = true)
+            composeRule.onNodeWithTag("doctor_workflow_REVIEWED")
+                .performScrollTo()
+                .performClick()
             waitForText("Текущий статус: Просмотрено", "saved doctor workflow")
 
             val updated = runBlocking { db.assessmentDao().getById(assessment.id) }!!
