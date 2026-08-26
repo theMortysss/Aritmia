@@ -85,8 +85,9 @@ class FrozenRussianRobustnessChallengeTest {
         println("FROZEN_ROBUSTNESS cases=${rows.size} ranked=$rankedCount top1=$top1 top5=$top5")
         DiseaseCatalog.definitions.forEach { definition ->
             val group = rows.filter { it.case.diseaseId == definition.id }
+            val rankedForClass = group.count { it.gate == "RANKED" }
             println(
-                "CLASS ${definition.id}: ranked=${group.count { it.gate == \"RANKED\" }}/6 " +
+                "CLASS ${definition.id}: ranked=$rankedForClass/6 " +
                     "top1=${group.count { it.rank == 1 }}/6 top5=${group.count { it.rank != null && it.rank in 1..5 }}/6 " +
                     "concepts=${group.map { it.concepts.size }}"
             )
