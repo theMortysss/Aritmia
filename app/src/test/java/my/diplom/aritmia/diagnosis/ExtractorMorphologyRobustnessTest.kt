@@ -38,6 +38,20 @@ class ExtractorMorphologyRobustnessTest {
     }
 
     @Test
+    fun newNaturalFormsPreserveExplicitNegation() {
+        assertFalse("syncope" in concepts("Сознание не потерял"))
+        assertFalse("dyspnea" in concepts("Дышать не трудно"))
+
+        val nonPleuritic = concepts("Когда вдыхаю, боль в груди не усиливается")
+        assertTrue("chest_pain" in nonPleuritic)
+        assertFalse("pleuritic_pain" in nonPleuritic)
+
+        val negatedCoordination = concepts("Боль в груди, спине и животе отсутствует")
+        assertFalse("back_pain" in negatedCoordination)
+        assertFalse("abdominal_pain" in negatedCoordination)
+    }
+
+    @Test
     fun conservativeSafetyRegressionsRemainIntact() {
         assertEquals(emptySet<String>(), concepts("Болит горло"))
         assertFalse("chest_pain" in concepts("Грудь не болит"))
