@@ -1,5 +1,6 @@
 package my.diplom.aritmia.diagnosis
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,5 +38,17 @@ class FreeTextSymptomExtractorTest {
         )
         assertFalse("chest_pain" in result.conceptIds)
         assertTrue("palpitations" in result.conceptIds)
+    }
+
+    @Test
+    fun throatPainDoesNotInventCardiovascularConcept() {
+        val result = FreeTextSymptomExtractor.extract(listOf("болит горло"))
+        assertTrue(result.conceptIds.isEmpty())
+    }
+
+    @Test
+    fun sparseChestPainProducesOnlyChestPainConcept() {
+        val result = FreeTextSymptomExtractor.extract(listOf("болит грудь"))
+        assertEquals(setOf("chest_pain"), result.conceptIds)
     }
 }
