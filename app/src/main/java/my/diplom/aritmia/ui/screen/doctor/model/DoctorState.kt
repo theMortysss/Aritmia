@@ -11,12 +11,10 @@ data class DoctorScreenState(
     val selectedTabIndex: Int = 0,
     val phoneFilter: String = "",
     val nameFilter: String = "",
-    val minProbability: Int = 0,
     val startDate: LocalDateTime? = null,
     val endDate: LocalDateTime? = null,
     val tempPhoneFilter: String = "",
     val tempNameFilter: String = "",
-    val tempMinProbability: Int = 0,
     val tempStartDate: LocalDateTime? = null,
     val tempEndDate: LocalDateTime? = null,
     val showFilterSheet: Boolean = false,
@@ -27,8 +25,7 @@ data class DoctorScreenState(
     val rules: List<RuleEntity> = emptyList(),
     val showRuleEditor: Boolean = false,
     val selectedRule: RuleEntity? = null,
-    val logout: Boolean = false,
-    val nnRetraining: Boolean = false
+    val logout: Boolean = false
 )
 
 data class SymptomItem(
