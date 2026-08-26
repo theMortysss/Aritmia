@@ -139,7 +139,7 @@ class DiseaseNetworkRepository(private val context: Context) {
     fun isReady(): Boolean = network != null
     fun isUsingPretrainedModel(): Boolean = pretrained
     fun lastLoss(): Double? = network?.lastLoss
-    fun lastEpochs(): Int = network?.lastEpochs ?: 0
+    fun lastEpochs(): Int? = network?.lastEpochs
 
     private fun readModelJson(): String {
         runCatching {
