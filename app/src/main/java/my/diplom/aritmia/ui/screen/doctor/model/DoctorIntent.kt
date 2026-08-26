@@ -20,10 +20,6 @@ sealed class DoctorScreenIntent {
         val endDate: LocalDateTime?
     ) : DoctorScreenIntent()
 
-    /**
-     * UNCHANGED_DATE_FILTER means that a date field was not supplied and must stay unchanged.
-     * Explicit null means that the user cleared that date filter.
-     */
     data class UpdateTempFilter(
         val phone: String? = null,
         val name: String? = null,
@@ -35,11 +31,22 @@ sealed class DoctorScreenIntent {
     object ShowFilterSheet : DoctorScreenIntent()
     object HideFilterSheet : DoctorScreenIntent()
     data class ChangeTab(val tabIndex: Int) : DoctorScreenIntent()
+
+    data class SetStatusFilter(val status: String) : DoctorScreenIntent()
+    data class SetWorkflowFilter(val status: String) : DoctorScreenIntent()
+    data class SetAttentionOnly(val enabled: Boolean) : DoctorScreenIntent()
+    data class OpenAssessment(val assessmentId: Int) : DoctorScreenIntent()
+    object CloseAssessment : DoctorScreenIntent()
+    data class UpdateDoctorNote(val note: String) : DoctorScreenIntent()
+    data class SaveAssessmentWorkflow(val workflowStatus: String) : DoctorScreenIntent()
+
     object ShowRuleEditor : DoctorScreenIntent()
     object HideRuleEditor : DoctorScreenIntent()
     data class SelectRule(val rule: RuleEntity?) : DoctorScreenIntent()
     data class SaveRule(val rule: RuleEntity) : DoctorScreenIntent()
     data class DeleteRule(val rule: RuleEntity) : DoctorScreenIntent()
     object Logout : DoctorScreenIntent()
+
+    // Retained while legacy SymptomEntity UI is phased out.
     data class MarkPatientAsCalled(val symptomId: Int, val called: Boolean) : DoctorScreenIntent()
 }
