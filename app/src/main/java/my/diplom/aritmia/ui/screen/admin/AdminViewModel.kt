@@ -18,6 +18,7 @@ import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.AuditEventEntity
 import my.diplom.aritmia.data.Role
+import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.User
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.security.PasswordHasher
@@ -63,14 +64,20 @@ class AdminScreenViewModel @Inject constructor(
             }
             is AdminScreenIntent.SelectRule -> _state.update { it.copy(selectedRule = intent.rule) }
             is AdminScreenIntent.ShowUserEditor -> _state.update { it.copy(showUserEditor = true) }
-            is AdminScreenIntent.HideUserEditor -> _state.update { it.copy(showUserEditor = false, errorMessage = null) }
+            is AdminScreenIntent.HideUserEditor -> _state.update {
+                it.copy(showUserEditor = false, selectedUser = null, errorMessage = null)
+            }
             is AdminScreenIntent.ShowRuleEditor -> _state.update { it.copy(showRuleEditor = true) }
-            is AdminScreenIntent.HideRuleEditor -> _state.update { it.copy(showRuleEditor = false) }
+            is AdminScreenIntent.HideRuleEditor -> _state.update {
+                it.copy(showRuleEditor = false, selectedRule = null)
+            }
             is AdminScreenIntent.UpdateFullName -> updateFullName(intent.fullName)
             is AdminScreenIntent.UpdatePhone -> _state.update {
                 it.copy(tempPhone = intent.phone.filter(Char::isDigit).take(10), errorMessage = null)
             }
-            is AdminScreenIntent.UpdatePassword -> _state.update { it.copy(tempPassword = intent.password, errorMessage = null) }
+            is AdminScreenIntent.UpdatePassword -> _state.update {
+                it.copy(tempPassword = intent.password, errorMessage = null)
+            }
             is AdminScreenIntent.UpdateRole -> _state.update { it.copy(tempRole = intent.role, errorMessage = null) }
             is AdminScreenIntent.UpdateGender -> _state.update { it.copy(tempGender = intent.gender, errorMessage = null) }
             is AdminScreenIntent.UpdateAge -> _state.update {
@@ -134,7 +141,7 @@ class AdminScreenViewModel @Inject constructor(
         _state.update { it.copy(tempFullName = finalName, errorMessage = null) }
     }
 
-    private fun saveUser(existing: User) {
+    private fun saveUser(formUser: User) {
         val fullName = _state.value.tempFullName.trim()
         val phone = _state.value.tempPhone
         val password = _state.value.tempPassword
@@ -143,6 +150,7 @@ class AdminScreenViewModel @Inject constructor(
         val age = _state.value.tempAge
         val specialty = _state.value.tempSpecialty
         val currentAdminId = _state.value.currentAdminId
+        val original = _state.value.selectedUser?.takeIf { it.id == formUser.id }
 
         if (!fullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*$"))) {
             setError("ФИО должно содержать только буквы, слова с заглавной буквы"); return
@@ -153,50 +161,50 @@ class AdminScreenViewModel @Inject constructor(
         if (role == Role.PATIENT && age.isNotBlank() && (age.toIntOrNull() ?: 0) !in 1..150) {
             setError("Возраст должен быть от 1 до 150"); return
         }
-        if (existing.id == 0 && password.length < 6) {
+        if (formUser.id == 0 && password.length < 6) {
             setError("Для нового пользователя пароль должен содержать минимум 6 символов"); return
         }
-        if (existing.id != 0 && password.isNotBlank() && password.length < 6) {
+        if (formUser.id != 0 && password.isNotBlank() && password.length < 6) {
             setError("Новый пароль должен содержать минимум 6 символов"); return
         }
-        if (existing.id == currentAdminId && role != Role.ADMIN) {
+        if (formUser.id == currentAdminId && role != Role.ADMIN) {
             setError("Нельзя снять роль администратора с текущей учётной записи"); return
         }
 
         val formattedPhone = formatPhoneNumber(phone)
         viewModelScope.launch {
             val duplicate = db.userDao().getUserByPhoneAndRole(formattedPhone, role)
-            if (duplicate != null && duplicate.id != existing.id) {
+            if (duplicate != null && duplicate.id != formUser.id) {
                 setError("Пользователь с таким номером телефона и ролью уже существует")
                 return@launch
             }
 
             val storedPassword = when {
                 password.isNotBlank() -> withContext(Dispatchers.Default) { PasswordHasher.hash(password) }
-                existing.id != 0 -> existing.password
+                original != null -> original.password
                 else -> return@launch
             }
             val updated = User(
-                id = existing.id,
+                id = formUser.id,
                 fullName = fullName,
                 phone = formattedPhone,
                 password = storedPassword,
                 role = role,
-                gender = gender.ifBlank { null },
-                age = age.toIntOrNull(),
-                specialty = specialty.ifBlank { null },
-                isActive = if (existing.id == 0) true else existing.isActive
+                gender = if (role == Role.PATIENT) gender.ifBlank { null } else null,
+                age = if (role == Role.PATIENT) age.toIntOrNull() else null,
+                specialty = if (role == Role.DOCTOR) specialty.ifBlank { null } else null,
+                isActive = original?.isActive ?: true
             )
 
             if (updated.id == 0) db.userDao().insert(updated) else db.userDao().update(updated)
             val persisted = db.userDao().getUserByPhoneAndRole(formattedPhone, role)
             logAudit(
-                action = if (existing.id == 0) "USER_CREATE" else "USER_UPDATE",
+                action = if (formUser.id == 0) "USER_CREATE" else "USER_UPDATE",
                 entityType = "User",
-                entityId = persisted?.id?.toString() ?: existing.id.takeIf { it != 0 }?.toString(),
+                entityId = persisted?.id?.toString() ?: formUser.id.takeIf { it != 0 }?.toString(),
                 details = "role=${role.name};phone=$formattedPhone;passwordChanged=${password.isNotBlank()}"
             )
-            _state.update { it.copy(showUserEditor = false, errorMessage = null) }
+            _state.update { it.copy(showUserEditor = false, selectedUser = null, errorMessage = null) }
             loadData()
         }
     }
@@ -230,7 +238,7 @@ class AdminScreenViewModel @Inject constructor(
         }
     }
 
-    private fun saveRule(rule: my.diplom.aritmia.data.RuleEntity) {
+    private fun saveRule(rule: RuleEntity) {
         viewModelScope.launch {
             val creating = rule.id == 0
             if (creating) db.ruleDao().insert(rule) else db.ruleDao().update(rule)
@@ -245,12 +253,12 @@ class AdminScreenViewModel @Inject constructor(
                 entityId = persisted?.id?.toString(),
                 details = "symptomKey=${rule.symptomKey};medicalTerm=${rule.medicalTerm}"
             )
-            _state.update { it.copy(showRuleEditor = false) }
+            _state.update { it.copy(showRuleEditor = false, selectedRule = null) }
             loadData()
         }
     }
 
-    private fun deleteRule(rule: my.diplom.aritmia.data.RuleEntity) {
+    private fun deleteRule(rule: RuleEntity) {
         viewModelScope.launch {
             db.ruleDao().delete(rule)
             logAudit(
