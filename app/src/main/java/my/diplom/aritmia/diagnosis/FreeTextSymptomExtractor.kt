@@ -104,11 +104,22 @@ object FreeTextSymptomExtractor {
             "ребрах" to "боль в ребрах"
         )
 
-        return pattern.findAll(normalized).flatMap { match ->
-            listOf(match.groupValues[1], match.groupValues[2], match.groupValues[3])
-                .filter { it.isNotBlank() }
-                .mapNotNull { locationToPhrase[it] }
-        }.toList()
+        return pattern.findAll(normalized)
+            .filterNot { match -> isExplicitlyNegatedCoordination(normalized, match) }
+            .flatMap { match ->
+                listOf(match.groupValues[1], match.groupValues[2], match.groupValues[3])
+                    .filter { it.isNotBlank() }
+                    .mapNotNull { locationToPhrase[it] }
+            }
+            .toList()
+    }
+
+    private fun isExplicitlyNegatedCoordination(normalized: String, match: MatchResult): Boolean {
+        val before = normalized.substring(0, match.range.first).trimEnd()
+        val after = normalized.substring(match.range.last + 1).trimStart()
+        val negatedBefore = Regex("(?:^|\\s)(?:нет|без)(?:\\s+никакой)?$").containsMatchIn(before)
+        val negatedAfter = Regex("^(?:нет|отсутствует|не\\s+наблюдается)(?:$|\\s)").containsMatchIn(after)
+        return negatedBefore || negatedAfter
     }
 
     private fun normalize(value: String): String = value
@@ -189,14 +200,19 @@ object FreeTextSymptomExtractor {
             }
         }
 
-        // Specific descriptor negation. Do not generalize this to every "не": phrases such
-        // as "не хватает воздуха" are positive symptom expressions by design.
-        val negatableDescriptors = setOf("редк", "част", "высок")
+        // Only a small allow-list is treated as direct "не + word" negation. Requiring the
+        // negated word to belong to the matched alias keeps positive forms such as
+        // "не хватает воздуха" intact and avoids suppressing unrelated nearby symptoms.
+        val directlyNegatableAliasWords = setOf(
+            "редк", "част", "высок",
+            "потерял", "потеряла", "терял", "теряла",
+            "трудно", "усиливается"
+        )
         val canonicalAliasWords = meaningfulWords(alias)
         for (i in 0 until words.lastIndex) {
             if (words[i] == "не") {
                 val next = canonicalWord(words[i + 1])
-                if (next in negatableDescriptors && next in canonicalAliasWords) return true
+                if (next in directlyNegatableAliasWords && next in canonicalAliasWords) return true
             }
         }
         return false
