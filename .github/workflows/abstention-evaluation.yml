@@ -7,10 +7,12 @@ on:
     paths:
       - .github/workflows/abstention-evaluation.yml
       - ml/**
+      - app/src/main/java/my/diplom/aritmia/diagnosis/FreeTextSymptomExtractor.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedRussianOodExtractionTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedScopeBoundaryExtractionTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedPretrainedMlpChallengeTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/FrozenRussianRobustnessChallengeTest.kt
+      - app/src/test/java/my/diplom/aritmia/diagnosis/ExtractorMorphologyRobustnessTest.kt
   workflow_dispatch:
 
 concurrency:
@@ -40,6 +42,8 @@ jobs:
       - name: Export concepts and exact pretrained MLP challenges with real Kotlin code
         run: |
           ./gradlew testDebugUnitTest \
+            --tests my.diplom.aritmia.diagnosis.FreeTextSymptomExtractorTest \
+            --tests my.diplom.aritmia.diagnosis.ExtractorMorphologyRobustnessTest \
             --tests my.diplom.aritmia.diagnosis.CuratedRussianOodExtractionTest \
             --tests my.diplom.aritmia.diagnosis.CuratedScopeBoundaryExtractionTest \
             --tests my.diplom.aritmia.diagnosis.CuratedPretrainedMlpChallengeTest \
