@@ -143,6 +143,15 @@ jobs:
             --model-dir app/src/main/assets/disease_model \
             --output joint_abstention_report.json
 
+      - name: Evaluate support-distance abstention gate
+        run: |
+          python ml/evaluate_support_distance.py \
+            --csv "$CSV_PATH" \
+            --frozen-json "$ROBUSTNESS_JSON" \
+            --boundary-json "$BOUNDARY_JSON" \
+            --model-dir app/src/main/assets/disease_model \
+            --output support_distance_report.json
+
       - name: Evaluate complaint-concept scope detector
         run: |
           python ml/evaluate_scope_detector.py \
@@ -172,6 +181,7 @@ jobs:
             evidence_gate_report.json
             specificity_gate_report.json
             joint_abstention_report.json
+            support_distance_report.json
             scope_detector_report.json
             curated_text_scope_report.json
             curated_scope_boundary_report.json
