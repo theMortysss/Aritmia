@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - master
+  push:
+    branches:
+      - verify/patient-e2e
 
 concurrency:
   group: android-ci-${{ github.workflow }}-${{ github.ref }}
