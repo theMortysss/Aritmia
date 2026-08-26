@@ -200,8 +200,12 @@ class AdminDoctorJourneyInstrumentedTest {
             composeRule.onNodeWithTag("doctor_workflow_REVIEWED")
                 .performScrollTo()
                 .performClick()
-            waitForText("Текущий статус: Просмотрено", "saved doctor workflow")
 
+            composeRule.waitUntil(15_000) {
+                runBlocking {
+                    db.assessmentDao().getById(assessment.id)?.workflowStatus == AssessmentWorkflow.REVIEWED
+                }
+            }
             val updated = runBlocking { db.assessmentDao().getById(assessment.id) }!!
             assertEquals(AssessmentWorkflow.REVIEWED, updated.workflowStatus)
             assertEquals("Пациенту рекомендована очная консультация", updated.doctorNote)
@@ -209,6 +213,11 @@ class AdminDoctorJourneyInstrumentedTest {
             assertEquals(assessment.complaints, updated.complaints)
             assertEquals(assessment.recognizedConceptIds, updated.recognizedConceptIds)
             assertEquals(assessment.modelVersion, updated.modelVersion)
+
+            // Re-open from persisted state instead of depending on Flow/UI refresh timing.
+            clickExactText("Закрыть")
+            clickExactText("Открыть обращение")
+            waitForText("Текущий статус: Просмотрено", "reopened saved doctor workflow")
 
             clickExactText("Закрыть")
             clickExactText("Правила")
