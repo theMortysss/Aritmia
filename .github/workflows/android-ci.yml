@@ -1,9 +1,6 @@
 name: Android CI
 
 on:
-  push:
-    branches:
-      - chore/verify-android-build
   pull_request:
     branches:
       - master
