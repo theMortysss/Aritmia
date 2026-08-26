@@ -122,8 +122,17 @@ class PatientJourneyInstrumentedTest {
                 stage = "logout confirmation dialog"
             )
             composeRule.onNodeWithText("Да").performClick()
-            waitForNoPatientSession(stage = "logout")
-            waitForText("Вход в приложение", stage = "login screen after logout")
+            composeRule.waitForIdle()
+            waitForText(
+                "Вход в приложение",
+                stage = "login screen after logout",
+                timeoutMillis = 15_000
+            )
+            assertEquals(
+                "Logout must clear the persisted patient session before showing login",
+                -1,
+                prefs.getInt("current_patient_id", -1)
+            )
 
             loginPatient(phone, password)
             waitForPatientSession(
@@ -246,15 +255,6 @@ class PatientJourneyInstrumentedTest {
                 "Current patient id=${prefs.getInt("current_patient_id", -1)}; " +
                 "visible auth error=${visibleAuthError() ?: "none"}"
         )
-    }
-
-    private fun waitForNoPatientSession(stage: String, timeoutMillis: Long = 10_000) {
-        val deadline = SystemClock.uptimeMillis() + timeoutMillis
-        while (SystemClock.uptimeMillis() < deadline) {
-            if (prefs.getInt("current_patient_id", -1) == -1) return
-            SystemClock.sleep(50)
-        }
-        throw AssertionError("Timed out during $stage waiting for patient session to clear")
     }
 
     private fun visibleAuthError(): String? {
