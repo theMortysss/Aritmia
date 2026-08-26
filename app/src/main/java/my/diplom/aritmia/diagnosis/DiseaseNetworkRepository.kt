@@ -8,12 +8,24 @@ import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
+enum class DiseaseAssessmentStatus {
+    OUT_OF_SCOPE,
+    INSUFFICIENT_EVIDENCE,
+    RANKED
+}
+
+data class DiseaseAssessment(
+    val status: DiseaseAssessmentStatus,
+    val recognizedConceptIds: Set<String>,
+    val candidates: List<DiseaseCandidate> = emptyList()
+)
+
 /**
  * Репозиторий многоклассовой сердечно-сосудистой модели.
  *
- * Приоритет: загрузить заранее обученную модель из assets/disease_model.json либо
- * финальные v2-части из assets/disease_model/. Если pretrained asset отсутствует или
- * несовместим, приложение остаётся работоспособным за счёт bootstrap fallback.
+ * Единственный вход модели — свободно введённые жалобы пациента. Производные
+ * медицинские термины, демография, ЭКГ, лабораторные показатели и другие
+ * структурированные данные в классификатор заболеваний не подаются.
  */
 class DiseaseNetworkRepository(private val context: Context) {
 
@@ -23,6 +35,11 @@ class DiseaseNetworkRepository(private val context: Context) {
         private const val MODEL_PART_PREFIX = "v2-"
         private const val MODEL_TYPE = "aritmia_symptom_multiclass_mlp"
         private const val FORMAT_VERSION = 1
+
+        // Консервативный evidence gate. Это НЕ confidence threshold модели.
+        // Нулевой набор признаков означает отсутствие входа для cardiovascular MLP,
+        // а один распознанный concept считается недостаточным для top-5 ранжирования.
+        private const val MIN_CONCEPTS_FOR_RANKING = 2
     }
 
     @Volatile private var network: DiseaseNeuralNetwork? = null
@@ -55,40 +72,70 @@ class DiseaseNetworkRepository(private val context: Context) {
         }
     }
 
-    suspend fun classify(
+    suspend fun assess(
         complaints: List<String>,
-        medicalTerms: List<String> = emptyList(),
         limit: Int = 5
-    ): List<DiseaseCandidate> = withContext(Dispatchers.Default) {
-        initialize()
-        val model = network ?: return@withContext emptyList()
-        val outputs = outputDiseaseIds
-        if (outputs.size != model.outputSize) return@withContext emptyList()
+    ): DiseaseAssessment = withContext(Dispatchers.Default) {
+        val extraction = FreeTextSymptomExtractor.extract(complaints)
+        val concepts = extraction.conceptIds
 
-        val extraction = FreeTextSymptomExtractor.extract(complaints + medicalTerms)
-        if (extraction.conceptIds.isEmpty()) return@withContext emptyList()
+        if (concepts.isEmpty()) {
+            return@withContext DiseaseAssessment(
+                status = DiseaseAssessmentStatus.OUT_OF_SCOPE,
+                recognizedConceptIds = emptySet()
+            )
+        }
+
+        if (concepts.size < MIN_CONCEPTS_FOR_RANKING) {
+            return@withContext DiseaseAssessment(
+                status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
+                recognizedConceptIds = concepts
+            )
+        }
+
+        initialize()
+        val model = network ?: return@withContext DiseaseAssessment(
+            status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
+            recognizedConceptIds = concepts
+        )
+        val outputs = outputDiseaseIds
+        if (outputs.size != model.outputSize) {
+            return@withContext DiseaseAssessment(
+                status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
+                recognizedConceptIds = concepts
+            )
+        }
 
         val conceptIndex = DiseaseCatalog.concepts
             .mapIndexed { index, concept -> concept.id to index }
             .toMap()
         val vector = DoubleArray(DiseaseCatalog.concepts.size)
-        extraction.conceptIds.forEach { id ->
-            conceptIndex[id]?.let { index -> vector[index] = 1.0 }
-        }
+        concepts.forEach { id -> conceptIndex[id]?.let { vector[it] = 1.0 } }
 
         val probabilities = model.predict(vector)
-        outputs.mapIndexedNotNull { index, diseaseId ->
+        val candidates = outputs.mapIndexedNotNull { index, diseaseId ->
             val disease = DiseaseCatalog.disease(diseaseId) ?: return@mapIndexedNotNull null
             DiseaseCandidate(
                 id = disease.id,
                 name = disease.name,
                 modelScorePercent = (probabilities[index] * 100.0).roundToInt().coerceIn(0, 100),
-                matchedSignals = DiseaseCatalog.explain(disease.id, extraction.conceptIds)
+                matchedSignals = DiseaseCatalog.explain(disease.id, concepts)
             )
         }
             .sortedByDescending { it.modelScorePercent }
             .take(limit.coerceAtLeast(0))
+
+        DiseaseAssessment(
+            status = DiseaseAssessmentStatus.RANKED,
+            recognizedConceptIds = concepts,
+            candidates = candidates
+        )
     }
+
+    suspend fun classify(
+        complaints: List<String>,
+        limit: Int = 5
+    ): List<DiseaseCandidate> = assess(complaints, limit).candidates
 
     fun isReady(): Boolean = network != null
     fun isUsingPretrainedModel(): Boolean = pretrained

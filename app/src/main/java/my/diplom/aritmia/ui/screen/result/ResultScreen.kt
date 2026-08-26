@@ -2,8 +2,6 @@ package my.diplom.aritmia.ui.screen.result
 
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,15 +16,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseCandidate
 import my.diplom.aritmia.ui.composable.TopBar
 import my.diplom.aritmia.ui.screen.SharedViewModel
@@ -80,14 +76,13 @@ fun ResultScreen(
                     onEditSymptom = { viewModel.onIntent(ResultScreenIntent.EditSymptom(it)) }
                 )
 
-                DiseaseCandidatesCard(state.diseaseCandidates)
-                LegacyAritmiaScoreCard(nnProbability = state.nnProbability)
-
-                val screeningScore = maxOf(
-                    state.nnProbability ?: state.diagnosis!!.probability,
-                    state.diseaseCandidates.firstOrNull()?.modelScorePercent ?: 0
+                DiseaseAssessmentCard(
+                    status = state.diseaseAssessmentStatus,
+                    recognizedConceptCount = state.recognizedDiseaseConceptCount,
+                    candidates = state.diseaseCandidates
                 )
-                if (screeningScore >= 60) RecommendationsCard()
+
+                SafetyCard(state.diseaseAssessmentStatus)
 
                 Button(
                     onClick = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
@@ -201,40 +196,77 @@ private fun SymptomsCard(
 }
 
 @Composable
-private fun DiseaseCandidatesCard(candidates: List<DiseaseCandidate>) {
+private fun DiseaseAssessmentCard(
+    status: DiseaseAssessmentStatus,
+    recognizedConceptCount: Int,
+    candidates: List<DiseaseCandidate>
+) {
     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Топ-5 возможных сердечно-сосудистых состояний", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Свободные жалобы преобразуются в симптом-признаки и подаются в многоклассовую MLP с softmax. Проценты ниже — относительная уверенность модели между поддерживаемыми классами, а не клинически откалиброванная вероятность диагноза.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            when (status) {
+                DiseaseAssessmentStatus.OUT_OF_SCOPE -> {
+                    Text(
+                        "Недостаточно данных для сердечно-сосудистой оценки",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Во введённых жалобах не распознаны признаки, на которых обучена сердечно-сосудистая модель. Поэтому приложение не будет искусственно распределять проценты между заболеваниями."
+                    )
+                    Text(
+                        "Если жалоба сохраняется или беспокоит вас, обратитесь к подходящему специалисту для очной оценки.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-            if (candidates.isEmpty()) {
-                Text("Модель не смогла извлечь достаточно сердечно-сосудистых признаков из введённых жалоб.")
-            } else {
-                candidates.forEachIndexed { index, candidate ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(
-                                "${index + 1}. ${candidate.name}",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium
+                DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE -> {
+                    Text(
+                        "Недостаточно признаков для ранжирования заболеваний",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Распознан только $recognizedConceptCount сердечно-сосудистый признак. По такому объёму информации приложение не показывает top-5, поскольку результат был бы слишком неопределённым."
+                    )
+                    Text(
+                        "Добавьте другие реально присутствующие жалобы или обратитесь к врачу, если симптом сохраняется, усиливается или вызывает тревогу.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                DiseaseAssessmentStatus.RANKED -> {
+                    Text(
+                        "Возможные сердечно-сосудистые состояния",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Показано относительное распределение уверенности модели только между поддерживаемыми классами. Эти проценты не являются клинической вероятностью диагноза.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    candidates.forEachIndexed { index, candidate ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    "${index + 1}. ${candidate.name}",
+                                    modifier = Modifier.weight(1f),
+                                    fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium
+                                )
+                                Text("${candidate.modelScorePercent}%", fontWeight = FontWeight.Bold)
+                            }
+                            LinearProgressIndicator(
+                                progress = { candidate.modelScorePercent / 100f },
+                                modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(50))
                             )
-                            Text("${candidate.modelScorePercent}%", fontWeight = FontWeight.Bold)
-                        }
-                        LinearProgressIndicator(
-                            progress = { candidate.modelScorePercent / 100f },
-                            modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(50)),
-                            strokeCap = StrokeCap.Round
-                        )
-                        if (candidate.matchedSignals.isNotEmpty()) {
-                            Text(
-                                "Учтённые признаки: ${candidate.matchedSignals.take(4).joinToString(", ")}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (candidate.matchedSignals.isNotEmpty()) {
+                                Text(
+                                    "Учтённые признаки: ${candidate.matchedSignals.take(4).joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -244,75 +276,33 @@ private fun DiseaseCandidatesCard(candidates: List<DiseaseCandidate>) {
 }
 
 @Composable
-private fun LegacyAritmiaScoreCard(nnProbability: Int?) {
-    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Дополнительная оценка аритмических признаков", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Это результат прежней бинарной MLP. Он оставлен как дополнительный сигнал и не участвует в выборе конкретного диагноза из топ-5.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (nnProbability != null) {
-                val color = probabilityColor(nnProbability)
-                val animatedProgress by animateFloatAsState(
-                    targetValue = nnProbability / 100f,
-                    animationSpec = tween(900),
-                    label = "nn_progress"
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Бинарная MLP")
-                    Text("$nnProbability%", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = color)
-                }
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(50)),
-                    color = color,
-                    trackColor = color.copy(alpha = 0.15f),
-                    strokeCap = StrokeCap.Round
-                )
-                val interpretation = when {
-                    nnProbability >= 75 -> "Выраженное совпадение с аритмическими признаками"
-                    nnProbability >= 50 -> "Умеренное совпадение с аритмическими признаками"
-                    nnProbability >= 25 -> "Низкое совпадение с аритмическими признаками"
-                    else -> "Аритмические признаки выражены слабо"
-                }
-                Text(interpretation, style = MaterialTheme.typography.bodySmall, color = color)
-            } else {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
-        }
+private fun SafetyCard(status: DiseaseAssessmentStatus) {
+    val container = if (status == DiseaseAssessmentStatus.RANKED) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.tertiaryContainer
     }
-}
+    val content = if (status == DiseaseAssessmentStatus.RANKED) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    }
 
-@Composable
-private fun RecommendationsCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        colors = CardDefaults.cardColors(containerColor = container),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Важно", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = content)
             Text(
-                "Рекомендации",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                "Результат приложения не является диагнозом и не заменяет осмотр врача.",
+                color = content
             )
-            listOf(
-                "Обратитесь к врачу для очной оценки результатов.",
-                "Для нарушений ритма обычно требуется ЭКГ, а при эпизодических симптомах может потребоваться Холтер-мониторирование.",
-                "Если появилась сильная или нарастающая боль в груди, выраженная одышка, потеря сознания или резкое ухудшение состояния — нужна срочная медицинская помощь."
-            ).forEach {
-                Text("• $it", color = MaterialTheme.colorScheme.onErrorContainer)
-            }
+            Text(
+                "Если появилась сильная или нарастающая боль в груди, выраженная одышка, потеря сознания или резкое ухудшение состояния — нужна срочная медицинская помощь.",
+                color = content
+            )
         }
     }
-}
-
-@Composable
-private fun probabilityColor(probability: Int): Color = when {
-    probability >= 60 -> MaterialTheme.colorScheme.error
-    probability >= 30 -> Color(0xFFF57C00)
-    else -> Color(0xFF388E3C)
 }
