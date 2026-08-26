@@ -75,6 +75,12 @@ jobs:
             --csv "$CSV_PATH" \
             --output evidence_gate_report.json
 
+      - name: Evaluate complaint-concept scope detector
+        run: |
+          python ml/evaluate_scope_detector.py \
+            --csv "$CSV_PATH" \
+            --output scope_detector_report.json
+
       - name: Upload abstention reports
         uses: actions/upload-artifact@v4
         with:
@@ -82,4 +88,5 @@ jobs:
           path: |
             abstention_report.json
             evidence_gate_report.json
+            scope_detector_report.json
           if-no-files-found: error
