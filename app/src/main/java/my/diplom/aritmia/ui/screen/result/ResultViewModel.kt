@@ -13,7 +13,6 @@ import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
@@ -24,7 +23,6 @@ import javax.inject.Inject
 @HiltViewModel
 class ResultViewModel @Inject constructor(
     private val db: AppDatabase,
-    private val networkRepository: NetworkRepository,
     private val diseaseNetworkRepository: DiseaseNetworkRepository
 ) : ViewModel() {
 
@@ -75,24 +73,13 @@ class ResultViewModel @Inject constructor(
             val diagnosis = allSymptoms.lastOrNull { it.patientId == userId }
             val rules = db.ruleDao().getAllRules()
 
-            val nnProb = diagnosis?.nnProbability ?: diagnosis?.let { d ->
-                networkRepository.predict(d.userInput.split(". ").filter { it.isNotBlank() })
-                    ?.let { (it * 100).toInt().coerceIn(0, 100) }
-            }
-
             if (diagnosis != null && rules.isNotEmpty()) {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
 
                 val userComplaints = diagnosis.userInput.split(". ").filter { it.isNotBlank() }
-                val medicalTerms = diagnosis.medicalTerm
-                    ?.split(", ")
-                    ?.filter { it.isNotBlank() }
-                    ?: emptyList()
-
-                val diseaseCandidates = diseaseNetworkRepository.classify(
+                val assessment = diseaseNetworkRepository.assess(
                     complaints = userComplaints,
-                    medicalTerms = medicalTerms,
                     limit = 5
                 )
 
@@ -103,8 +90,9 @@ class ResultViewModel @Inject constructor(
                         recognizedSymptoms = recognized,
                         unrecognizedSymptoms = unrecognized,
                         recognizedMedicalTerms = recTerms,
-                        diseaseCandidates = diseaseCandidates,
-                        nnProbability = nnProb,
+                        diseaseAssessmentStatus = assessment.status,
+                        recognizedDiseaseConceptCount = assessment.recognizedConceptIds.size,
+                        diseaseCandidates = assessment.candidates,
                         isLoading = false
                     )
                 }
@@ -128,8 +116,6 @@ class ResultViewModel @Inject constructor(
         viewModelScope.launch {
             val updatedInput = diagnosis.userInput.replace(selected, edited)
             val updatedSymptoms = updatedInput.split(". ").filter { it.isNotBlank() }
-            val newNnProb = networkRepository.predict(updatedSymptoms)
-                ?.let { (it * 100).toInt().coerceIn(0, 100) }
 
             val answers = parseAnswers(diagnosis.clarifyingAnswers).toMutableMap()
             answers.remove(selected)
@@ -138,14 +124,15 @@ class ResultViewModel @Inject constructor(
                 resolveSymptomTerm(s, rules, answers).medicalTerm
             }.joinToString(", ")
 
+            // Legacy probability fields remain in Room only for schema/history compatibility.
+            // They are no longer recomputed by the retired binary MLP.
             val updatedDiagnosis = diagnosis.copy(
                 userInput = updatedInput,
                 medicalTerm = newMedTerms.ifBlank { null },
-                probability = newNnProb ?: diagnosis.probability,
                 clarifyingAnswers = answers.entries
                     .filter { it.value.any { a -> a.isNotBlank() } }
                     .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
-                nnProbability = newNnProb
+                nnProbability = null
             )
             db.symptomDao().update(updatedDiagnosis)
 
@@ -156,9 +143,8 @@ class ResultViewModel @Inject constructor(
             } else {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(updatedDiagnosis.userInput, updatedDiagnosis.medicalTerm, rules)
-                val candidates = diseaseNetworkRepository.classify(
+                val assessment = diseaseNetworkRepository.assess(
                     complaints = updatedSymptoms,
-                    medicalTerms = newMedTerms.split(", ").filter { it.isNotBlank() },
                     limit = 5
                 )
                 _state.update {
@@ -167,8 +153,9 @@ class ResultViewModel @Inject constructor(
                         recognizedSymptoms = recognized,
                         unrecognizedSymptoms = unrecognized,
                         recognizedMedicalTerms = recTerms,
-                        diseaseCandidates = candidates,
-                        nnProbability = newNnProb,
+                        diseaseAssessmentStatus = assessment.status,
+                        recognizedDiseaseConceptCount = assessment.recognizedConceptIds.size,
+                        diseaseCandidates = assessment.candidates,
                         showDialog = false
                     )
                 }

@@ -1,12 +1,13 @@
 name: Android CI
 
 on:
-  push:
-    branches:
-      - chore/verify-android-build
   pull_request:
     branches:
       - master
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -15,6 +16,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Sparse pretrained confidence probe
+        run: python3 ml/evaluate_sparse_model.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

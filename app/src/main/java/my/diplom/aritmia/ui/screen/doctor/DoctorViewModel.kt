@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenState
 import my.diplom.aritmia.ui.screen.doctor.model.SymptomItem
@@ -21,8 +20,7 @@ import javax.inject.Inject
 @RequiresApi(Build.VERSION_CODES.O)
 @HiltViewModel
 class DoctorScreenViewModel @Inject constructor(
-    private val db: AppDatabase,
-    private val networkRepository: NetworkRepository
+    private val db: AppDatabase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DoctorScreenState())
@@ -49,12 +47,12 @@ class DoctorScreenViewModel @Inject constructor(
             is DoctorScreenIntent.ApplyFilters -> {
                 _state.update {
                     it.copy(
-                        phoneFilter   = intent.phone.trim().filter { c -> c.isDigit() },
-                        nameFilter    = intent.name.trim(),
+                        phoneFilter = intent.phone.trim().filter { c -> c.isDigit() },
+                        nameFilter = intent.name.trim(),
                         minProbability = intent.minProbability,
-                        startDate     = intent.startDate,
-                        endDate       = intent.endDate,
-                        page          = 0
+                        startDate = intent.startDate,
+                        endDate = intent.endDate,
+                        page = 0
                     )
                 }
                 loadSymptoms()
@@ -63,34 +61,34 @@ class DoctorScreenViewModel @Inject constructor(
             is DoctorScreenIntent.UpdateTempFilter ->
                 _state.update {
                     it.copy(
-                        tempPhoneFilter    = intent.phone?.filter { c -> c.isDigit() } ?: it.tempPhoneFilter,
-                        tempNameFilter     = intent.name?.trim() ?: it.tempNameFilter,
+                        tempPhoneFilter = intent.phone?.filter { c -> c.isDigit() } ?: it.tempPhoneFilter,
+                        tempNameFilter = intent.name?.trim() ?: it.tempNameFilter,
                         tempMinProbability = intent.minProbability ?: it.tempMinProbability,
-                        tempStartDate      = intent.startDate ?: it.tempStartDate,
-                        tempEndDate        = intent.endDate ?: it.tempEndDate
+                        tempStartDate = intent.startDate ?: it.tempStartDate,
+                        tempEndDate = intent.endDate ?: it.tempEndDate
                     )
                 }
 
             is DoctorScreenIntent.ResetFilters ->
                 _state.update {
                     it.copy(
-                        tempPhoneFilter    = "",
-                        tempNameFilter     = "",
+                        tempPhoneFilter = "",
+                        tempNameFilter = "",
                         tempMinProbability = 0,
-                        tempStartDate      = null,
-                        tempEndDate        = null
+                        tempStartDate = null,
+                        tempEndDate = null
                     )
                 }
 
             is DoctorScreenIntent.ShowFilterSheet ->
                 _state.update {
                     it.copy(
-                        showFilterSheet    = true,
-                        tempPhoneFilter    = it.phoneFilter,
-                        tempNameFilter     = it.nameFilter,
+                        showFilterSheet = true,
+                        tempPhoneFilter = it.phoneFilter,
+                        tempNameFilter = it.nameFilter,
                         tempMinProbability = it.minProbability,
-                        tempStartDate      = it.startDate,
-                        tempEndDate        = it.endDate
+                        tempStartDate = it.startDate,
+                        tempEndDate = it.endDate
                     )
                 }
 
@@ -113,24 +111,11 @@ class DoctorScreenViewModel @Inject constructor(
                 viewModelScope.launch {
                     if (intent.rule.id == 0) db.ruleDao().insert(intent.rule)
                     else db.ruleDao().update(intent.rule)
-
-                    // Правила изменились → переобучаем нейросеть
-                    val updatedRules = db.ruleDao().getAllRules()
-                    _state.update { it.copy(nnRetraining = true) }
-                    networkRepository.retrain(updatedRules)
-                    _state.update { it.copy(nnRetraining = false) }
                 }
             }
 
             is DoctorScreenIntent.DeleteRule -> {
-                viewModelScope.launch {
-                    db.ruleDao().delete(intent.rule)
-
-                    val updatedRules = db.ruleDao().getAllRules()
-                    _state.update { it.copy(nnRetraining = true) }
-                    networkRepository.retrain(updatedRules)
-                    _state.update { it.copy(nnRetraining = false) }
-                }
+                viewModelScope.launch { db.ruleDao().delete(intent.rule) }
             }
 
             is DoctorScreenIntent.Logout ->
@@ -157,36 +142,36 @@ class DoctorScreenViewModel @Inject constructor(
             val offset = _state.value.page * pageSize
 
             val symptoms = db.symptomDao().getSymptomsFiltered(
-                phoneFilter    = _state.value.phoneFilter,
-                nameFilter     = _state.value.nameFilter,
+                phoneFilter = _state.value.phoneFilter,
+                nameFilter = _state.value.nameFilter,
                 minProbability = _state.value.minProbability,
-                startDate      = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                endDate        = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                limit          = pageSize,
-                offset         = offset
+                startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                limit = pageSize,
+                offset = offset
             )
 
             val totalCount = db.symptomDao().getFilteredCount(
-                phoneFilter    = _state.value.phoneFilter,
-                nameFilter     = _state.value.nameFilter,
+                phoneFilter = _state.value.phoneFilter,
+                nameFilter = _state.value.nameFilter,
                 minProbability = _state.value.minProbability,
-                startDate      = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                endDate        = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             )
 
             val allPatients = db.userDao().getAllPatients()
             val rules = _state.value.rules
 
             val items = symptoms.map { symptom ->
-                val user         = allPatients.find { it.id == symptom.patientId }
+                val user = allPatients.find { it.id == symptom.patientId }
                 val userSymptoms = symptom.userInput.split(". ").filter { it.isNotBlank() }
-                val medTerms     = symptom.medicalTerm?.split(", ")?.filter { it.isNotBlank() }
+                val medTerms = symptom.medicalTerm?.split(", ")?.filter { it.isNotBlank() }
                     ?: emptyList()
 
-                val recognized   = mutableListOf<String>()
+                val recognized = mutableListOf<String>()
                 val unrecognized = mutableListOf<String>()
-                val recTerms     = mutableListOf<String>()
-                val clarAnswers  = symptom.clarifyingAnswers?.split(";")
+                val recTerms = mutableListOf<String>()
+                val clarAnswers = symptom.clarifyingAnswers?.split(";")
                     ?.filter { it.isNotBlank() }
                     ?.associate { e ->
                         val (k, v) = e.split("=")
@@ -195,7 +180,7 @@ class DoctorScreenViewModel @Inject constructor(
 
                 userSymptoms.forEachIndexed { idx, s ->
                     val match = rules.find { s.contains(it.symptomKey, ignoreCase = true) }
-                    val term  = medTerms.getOrNull(idx)
+                    val term = medTerms.getOrNull(idx)
                     if (match != null && term != null && term != "Нераспознанный симптом") {
                         val possible = buildList {
                             add(match.medicalTerm)
@@ -203,20 +188,24 @@ class DoctorScreenViewModel @Inject constructor(
                                 t.split("=").getOrNull(1)?.let { add(it) }
                             }
                         }
-                        if (possible.contains(term)) { recognized.add(s); recTerms.add(term) }
-                        else unrecognized.add(s)
+                        if (possible.contains(term)) {
+                            recognized.add(s)
+                            recTerms.add(term)
+                        } else {
+                            unrecognized.add(s)
+                        }
                     } else {
                         unrecognized.add(s)
                     }
                 }
 
                 SymptomItem(
-                    symptom                = symptom,
-                    user                   = user,
-                    recognizedSymptoms     = recognized,
-                    unrecognizedSymptoms   = unrecognized,
+                    symptom = symptom,
+                    user = user,
+                    recognizedSymptoms = recognized,
+                    unrecognizedSymptoms = unrecognized,
                     recognizedMedicalTerms = recTerms,
-                    clarifyingAnswers      = clarAnswers
+                    clarifyingAnswers = clarAnswers
                 )
             }
 

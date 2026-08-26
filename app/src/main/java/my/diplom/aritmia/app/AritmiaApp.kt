@@ -1,7 +1,6 @@
 package my.diplom.aritmia.app
 
 import android.app.Application
-import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
 import dagger.hilt.android.HiltAndroidApp
@@ -12,7 +11,6 @@ import my.diplom.aritmia.BuildConfig
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.User
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.security.PasswordHasher
 import javax.inject.Inject
 
@@ -21,35 +19,11 @@ import javax.inject.Inject
 class AritmiaApp : Application() {
 
     @Inject lateinit var appDatabase: my.diplom.aritmia.data.AppDatabase
-    @Inject lateinit var networkRepository: NetworkRepository
-
-    companion object {
-        private const val NN_LOGIC_VERSION = 3
-        private const val PREF_NN_VERSION  = "nn_logic_version"
-    }
 
     override fun onCreate() {
         super.onCreate()
         CoroutineScope(Dispatchers.IO).launch {
             initializeDatabase()
-            invalidateCacheIfNeeded()
-            val rules = appDatabase.ruleDao().getAllRules()
-            if (!networkRepository.isReady()) {
-                networkRepository.initialize(rules)
-            }
-        }
-    }
-
-    private fun invalidateCacheIfNeeded() {
-        val prefs      = getSharedPreferences("nn_prefs", Context.MODE_PRIVATE)
-        val savedVer   = prefs.getInt(PREF_NN_VERSION, 0)
-        if (savedVer != NN_LOGIC_VERSION) {
-            val extDir = getExternalFilesDir(null)
-            extDir?.let { java.io.File(it, "nn/nn_weights.json").delete() }
-            java.io.File(filesDir, "nn/nn_weights.json").delete()
-
-            prefs.edit().putInt(PREF_NN_VERSION, NN_LOGIC_VERSION).apply()
-            android.util.Log.i("AritmiaApp", "NN cache invalidated (version $savedVer → $NN_LOGIC_VERSION)")
         }
     }
 
