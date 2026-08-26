@@ -36,10 +36,12 @@ class DiseaseNetworkRepository(private val context: Context) {
         private const val MODEL_TYPE = "aritmia_symptom_multiclass_mlp"
         private const val FORMAT_VERSION = 1
 
-        // Консервативный evidence gate. Это НЕ confidence threshold модели.
-        // Нулевой набор признаков означает отсутствие входа для cardiovascular MLP,
-        // а один распознанный concept считается недостаточным для top-5 ранжирования.
-        private const val MIN_CONCEPTS_FOR_RANKING = 2
+        // Консервативный evidence gate, а не confidence/OOD threshold.
+        // Исследовательская OOF-проверка показала заметно более устойчивое ранжирование
+        // для профилей с 4+ complaint-derived concepts. Профили с 1–3 concepts поэтому
+        // не передаются в top-5: пользователю предлагается дополнить свободный текст жалоб.
+        // Это инженерный порог достаточности признаков, не клиническая гарантия.
+        const val MIN_CONCEPTS_FOR_RANKING = 4
     }
 
     @Volatile private var network: DiseaseNeuralNetwork? = null
