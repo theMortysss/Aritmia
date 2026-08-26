@@ -9,42 +9,42 @@ class ExtractorMorphologyRobustnessTest {
 
     @Test
     fun inflectedPulseDescriptorsAreRecognized() {
-        assertTrue(concepts("Пульс стал очень редким").contains("slow_heart_rate"))
-        assertTrue(concepts("Пульс при этом был очень частым").contains("fast_heart_rate"))
+        assertTrue("slow_heart_rate" in concepts("Пульс стал очень редким"))
+        assertTrue("fast_heart_rate" in concepts("Пульс при этом был очень частым"))
     }
 
     @Test
     fun commonNaturalSyncopeAndDyspneaFormsAreRecognized() {
         val result = concepts("После боли в груди и нехватки воздуха потерял сознание")
-        assertTrue(result.contains("chest_pain"))
-        assertTrue(result.contains("dyspnea"))
-        assertTrue(result.contains("syncope"))
+        assertTrue("chest_pain" in result)
+        assertTrue("dyspnea" in result)
+        assertTrue("syncope" in result)
     }
 
     @Test
     fun breathingContextAcrossCommaPreservesPleuriticMeaning() {
         val result = concepts("Когда вдыхаю, боль в груди усиливается, трудно дышать")
-        assertTrue(result.contains("chest_pain"))
-        assertTrue(result.contains("pleuritic_pain"))
-        assertTrue(result.contains("dyspnea"))
+        assertTrue("chest_pain" in result)
+        assertTrue("pleuritic_pain" in result)
+        assertTrue("dyspnea" in result)
     }
 
     @Test
     fun coordinatedPainLocationsAreExpandedConservatively() {
         val result = concepts("Боль в груди, спине и животе")
-        assertTrue(result.contains("chest_pain"))
-        assertTrue(result.contains("back_pain"))
-        assertTrue(result.contains("abdominal_pain"))
+        assertTrue("chest_pain" in result)
+        assertTrue("back_pain" in result)
+        assertTrue("abdominal_pain" in result)
     }
 
     @Test
     fun conservativeSafetyRegressionsRemainIntact() {
         assertEquals(emptySet<String>(), concepts("Болит горло"))
-        assertFalse(concepts("Грудь не болит").contains("chest_pain"))
-        assertFalse(concepts("Пульс не редкий").contains("slow_heart_rate"))
-        assertFalse(concepts("Пульс не частый").contains("fast_heart_rate"))
-        assertTrue(concepts("Боль в груди не проходит").contains("chest_pain"))
-        assertTrue(concepts("Мне не хватает воздуха").contains("dyspnea"))
+        assertFalse("chest_pain" in concepts("Грудь не болит"))
+        assertFalse("slow_heart_rate" in concepts("Пульс не редкий"))
+        assertFalse("fast_heart_rate" in concepts("Пульс не частый"))
+        assertTrue("chest_pain" in concepts("Боль в груди не проходит"))
+        assertTrue("dyspnea" in concepts("Мне не хватает воздуха"))
     }
 
     private fun concepts(text: String): Set<String> =
