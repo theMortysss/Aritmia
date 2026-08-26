@@ -13,8 +13,14 @@ The report compares three simple selective-prediction scores:
   * certainty      = 1 - normalized predictive entropy
 
 For each score it reports risk/coverage operating points and how many OOD rows would
-incorrectly be accepted at the same threshold. A threshold should only be promoted to
-Android after reviewing this report and, ideally, an additional external text-OOD set.
+incorrectly be accepted at the same threshold. OOD probabilities are deliberately NOT
+averaged across folds: each OOD pattern is scored by every independently trained fold
+model and the acceptance metric aggregates those fold-level predictions. This avoids
+making OOD confidence artificially low through ensembling while ID confidence comes
+from a single OOF model.
+
+A threshold should only be promoted to Android after reviewing this report and,
+ideally, an additional external text-OOD set.
 """
 from __future__ import annotations
 
@@ -31,7 +37,6 @@ from train_cardiovascular import (
     CONCEPT_COLUMNS,
     DISEASES,
     LABEL_MAP,
-    SEED,
     generate_augmentation,
     new_model,
 )
@@ -82,24 +87,30 @@ def load_id_and_ood(csv_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray,
     ood_x = x[ood_mask]
     ood_labels = raw_labels[ood_mask]
 
-    # Deduplicate OOD concept patterns so very large diseases do not dominate the acceptance metric.
+    # Deduplicate OOD concept patterns so very large diseases do not dominate acceptance metrics.
+    # Disease-label diversity is measured before pattern deduplication because several diseases can
+    # legitimately collapse to the same 47-concept vector.
+    ood_unique_diseases = int(len(set(ood_labels.tolist())))
     if len(ood_x):
         _, ood_first = np.unique(ood_x, axis=0, return_index=True)
         ood_x = ood_x[ood_first]
-        ood_labels = ood_labels[ood_first]
 
     meta = {
         "rawRows": int(len(df)),
         "idUniqueRows": int(len(id_x)),
         "oodUniqueRowsWithKnownConcepts": int(len(ood_x)),
-        "oodUniqueDiseaseLabels": int(len(set(ood_labels.tolist()))),
+        "oodUniqueDiseaseLabelsBeforePatternDedup": ood_unique_diseases,
         "conceptCount": len(CONCEPT_COLUMNS),
         "classCount": len(DISEASES),
     }
     return id_x, id_y, ood_x, meta
 
 
-def oof_predict(id_x: np.ndarray, id_y: np.ndarray, ood_x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def oof_predict(
+    id_x: np.ndarray,
+    id_y: np.ndarray,
+    ood_x: np.ndarray,
+) -> tuple[np.ndarray, list[np.ndarray]]:
     splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=CV_SEED)
     aug_x, aug_y = generate_augmentation()
 
@@ -127,12 +138,7 @@ def oof_predict(id_x: np.ndarray, id_y: np.ndarray, ood_x: np.ndarray) -> tuple[
 
         print(f"fold {fold}/5 complete")
 
-    ood_probs = (
-        np.mean(np.stack(ood_fold_probs, axis=0), axis=0)
-        if ood_fold_probs
-        else np.empty((0, len(DISEASES)), dtype=np.float64)
-    )
-    return id_probs, ood_probs
+    return id_probs, ood_fold_probs
 
 
 def score_vectors(probabilities: np.ndarray) -> dict[str, np.ndarray]:
@@ -156,11 +162,36 @@ def score_vectors(probabilities: np.ndarray) -> dict[str, np.ndarray]:
     }
 
 
+def flatten_ood_scores(ood_fold_probs: list[np.ndarray]) -> dict[str, np.ndarray]:
+    if not ood_fold_probs:
+        return score_vectors(np.empty((0, len(DISEASES)), dtype=np.float64))
+
+    per_fold = [score_vectors(probabilities) for probabilities in ood_fold_probs]
+    return {
+        name: np.concatenate([scores[name] for scores in per_fold])
+        for name in ("max_confidence", "margin", "certainty")
+    }
+
+
+def ood_fold_acceptance(
+    ood_fold_probs: list[np.ndarray],
+    score_name: str,
+    threshold: float,
+) -> tuple[float, float]:
+    if not ood_fold_probs:
+        return float("nan"), float("nan")
+    rates = []
+    for probabilities in ood_fold_probs:
+        scores = score_vectors(probabilities)[score_name]
+        rates.append(float((scores >= threshold).mean()))
+    return float(np.mean(rates)), float(np.std(rates))
+
+
 def selective_table(
     name: str,
     id_score: np.ndarray,
-    ood_score: np.ndarray,
     correct: np.ndarray,
+    ood_fold_probs: list[np.ndarray],
     coverages: tuple[float, ...],
 ) -> list[dict]:
     rows: list[dict] = []
@@ -170,7 +201,9 @@ def selective_table(
         coverage = float(accepted.mean())
         accuracy = float(correct[accepted].mean()) if accepted.any() else float("nan")
         risk = 1.0 - accuracy if accepted.any() else float("nan")
-        ood_acceptance = float((ood_score >= threshold).mean()) if len(ood_score) else float("nan")
+        ood_acceptance, ood_acceptance_std = ood_fold_acceptance(
+            ood_fold_probs, name, threshold
+        )
         rows.append(
             {
                 "score": name,
@@ -179,7 +212,8 @@ def selective_table(
                 "actualCoverage": coverage,
                 "selectiveAccuracy": accuracy,
                 "selectiveRisk": risk,
-                "oodAcceptanceRate": ood_acceptance,
+                "oodAcceptanceRateMeanAcrossFolds": ood_acceptance,
+                "oodAcceptanceRateStdAcrossFolds": ood_acceptance_std,
             }
         )
     return rows
@@ -216,21 +250,29 @@ def evaluate(csv_path: Path, coverages: tuple[float, ...]) -> dict:
     if np.min(np.bincount(id_y, minlength=len(DISEASES))) < 5:
         raise ValueError("At least one cardiovascular class has fewer than 5 unique rows")
 
-    id_probs, ood_probs = oof_predict(id_x, id_y, ood_x)
+    id_probs, ood_fold_probs = oof_predict(id_x, id_y, ood_x)
     predictions = np.argmax(id_probs, axis=1)
     correct = predictions == id_y
-    top5 = top_k_accuracy_score(id_y, id_probs, k=min(5, len(DISEASES)), labels=np.arange(len(DISEASES)))
+    top5 = top_k_accuracy_score(
+        id_y,
+        id_probs,
+        k=min(5, len(DISEASES)),
+        labels=np.arange(len(DISEASES)),
+    )
 
     id_scores = score_vectors(id_probs)
-    ood_scores = score_vectors(ood_probs)
+    flattened_ood_scores = flatten_ood_scores(ood_fold_probs)
 
     selective: list[dict] = []
     aucs: dict[str, float | None] = {}
     for name, id_score in id_scores.items():
-        selective.extend(selective_table(name, id_score, ood_scores[name], correct, coverages))
-        if len(ood_scores[name]):
-            labels = np.concatenate([np.ones(len(id_score)), np.zeros(len(ood_scores[name]))])
-            scores = np.concatenate([id_score, ood_scores[name]])
+        selective.extend(
+            selective_table(name, id_score, correct, ood_fold_probs, coverages)
+        )
+        ood_score = flattened_ood_scores[name]
+        if len(ood_score):
+            labels = np.concatenate([np.ones(len(id_score)), np.zeros(len(ood_score))])
+            scores = np.concatenate([id_score, ood_score])
             aucs[name] = float(roc_auc_score(labels, scores))
         else:
             aucs[name] = None
@@ -239,6 +281,7 @@ def evaluate(csv_path: Path, coverages: tuple[float, ...]) -> dict:
         "notes": [
             "All model inputs are the same 47 complaint-derived concepts used by Android.",
             "OOD rows are diseases outside the 14 supported classes but containing at least one known model concept.",
+            "OOD confidence is evaluated independently for every fold model; probabilities are not ensemble-averaged.",
             "The current Android 0/1-concept evidence gate is evaluated separately and is not a calibrated confidence threshold.",
             "Do not call softmax scores clinical disease probabilities.",
         ],
@@ -248,7 +291,9 @@ def evaluate(csv_path: Path, coverages: tuple[float, ...]) -> dict:
             "oofTop5Accuracy": float(top5),
         },
         "inDomainVsOodAuc": aucs,
-        "conceptCountBreakdown": concept_count_breakdown(id_x, correct, id_scores["max_confidence"]),
+        "conceptCountBreakdown": concept_count_breakdown(
+            id_x, correct, id_scores["max_confidence"]
+        ),
         "riskCoverage": selective,
     }
 
@@ -273,7 +318,9 @@ def main() -> None:
     args = parser.parse_args()
 
     report = evaluate(args.csv, args.coverages)
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    args.output.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\nReport written to {args.output}")
 
