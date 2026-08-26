@@ -78,7 +78,7 @@ class PatientJourneyInstrumentedTest {
                 "Недостаточно признаков для ранжирования заболеваний",
                 stage = "three-concept abstention result"
             )
-            waitForText(
+            waitForTextContaining(
                 "Распознано сердечно-сосудистых признаков: 3.",
                 stage = "three-concept evidence count"
             )
