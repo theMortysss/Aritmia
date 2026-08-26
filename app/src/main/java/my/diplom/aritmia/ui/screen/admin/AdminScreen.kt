@@ -5,7 +5,6 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -37,14 +37,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.User
 import my.diplom.aritmia.ui.composable.TopBar
+import my.diplom.aritmia.ui.screen.admin.model.AdminDashboardMetrics
 import my.diplom.aritmia.ui.screen.admin.model.AdminScreenIntent
 import my.diplom.aritmia.ui.screen.doctor.RuleEditorDialog
 import my.diplom.aritmia.utils.MaskVisualTransformation
@@ -67,14 +66,11 @@ fun AdminScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val focusManager: FocusManager = LocalFocusManager.current
-    val tabs = listOf("Пользователи", "Правила")
-    val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+    val tabs = listOf("Обзор", "Пользователи", "Правила", "Аудит")
 
     LaunchedEffect(Unit) {
-        viewModel.state.collect { state ->
-            if (state.logout) {
-                onLogout()
-            }
+        viewModel.state.collect { current ->
+            if (current.logout) onLogout()
         }
     }
 
@@ -91,7 +87,7 @@ fun AdminScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
+                    interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() },
                     indication = null,
                     onClick = { focusManager.clearFocus() }
                 )
@@ -106,164 +102,334 @@ fun AdminScreen(
                 }
             }
 
-            when (state.selectedTabIndex) {
-                0 -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        Button(onClick = {
+            if (state.isLoading && state.users.isEmpty() && state.selectedTabIndex == 0) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(32.dp)
+                )
+            } else {
+                when (state.selectedTabIndex) {
+                    0 -> AdminOverview(
+                        metrics = state.metrics,
+                        modelAvailable = state.modelAvailable,
+                        modelVersion = state.modelVersion,
+                        extractorVersion = state.extractorVersion
+                    )
+
+                    1 -> UsersTab(
+                        users = state.users,
+                        search = state.userSearch,
+                        currentAdminId = state.currentAdminId,
+                        errorMessage = state.errorMessage,
+                        onSearch = { viewModel.onIntent(AdminScreenIntent.UpdateUserSearch(it)) },
+                        onAdd = {
                             viewModel.onIntent(AdminScreenIntent.SelectUser(null))
                             viewModel.onIntent(AdminScreenIntent.ShowUserEditor)
-                        }) {
-                            Text("Добавить пользователя")
-                        }
+                        },
+                        onEdit = {
+                            viewModel.onIntent(AdminScreenIntent.SelectUser(it))
+                            viewModel.onIntent(AdminScreenIntent.ShowUserEditor)
+                        },
+                        onSetActive = { user, active ->
+                            viewModel.onIntent(AdminScreenIntent.SetUserActive(user, active))
+                        },
+                        onDelete = { viewModel.onIntent(AdminScreenIntent.DeleteUser(it)) }
+                    )
 
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        if (state.isLoading) {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                        } else if (state.users.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Пользователи отсутствуют",
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    )
-                                )
-                            }
-                        } else {
-                            LazyColumn {
-                                items(state.users) { user ->
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = 8.dp)
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(16.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text(text = "ФИО: ${user.fullName}")
-                                            Text(text = "Телефон: ${user.phone}")
-                                            Text(
-                                                text = "Роль: ${
-                                                    when (user.role) {
-                                                        Role.PATIENT -> "Пациент"
-                                                        Role.DOCTOR -> "Врач"
-                                                        Role.ADMIN -> "Админ"
-                                                    }
-                                                }"
-                                            )
-                                            Text(text = "Пароль: ${user.password}")
-                                            user.gender?.let { Text(text = "Пол: $it") }
-                                            user.age?.let { Text(text = "Возраст: $it") }
-                                            user.specialty?.let { Text(text = "Специальность: $it") }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Button(onClick = {
-                                                    viewModel.onIntent(AdminScreenIntent.SelectUser(user))
-                                                    viewModel.onIntent(AdminScreenIntent.ShowUserEditor)
-                                                }) {
-                                                    Text("Редактировать")
-                                                }
-                                                Button(onClick = {
-                                                    viewModel.onIntent(AdminScreenIntent.DeleteUser(user))
-                                                }) {
-                                                    Text("Удалить")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (state.showUserEditor) {
-                        UserEditorDialog(
-                            user = state.selectedUser,
-                            onSave = { user ->
-                                viewModel.onIntent(AdminScreenIntent.SaveUser(user))
-                                viewModel.onIntent(AdminScreenIntent.HideUserEditor)
-                            },
-                            onDismiss = { viewModel.onIntent(AdminScreenIntent.HideUserEditor) },
-                            viewModel = viewModel
-                        )
-                    }
-                }
-                1 -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        Button(onClick = {
+                    2 -> RulesTab(
+                        rules = state.rules,
+                        onAdd = {
                             viewModel.onIntent(AdminScreenIntent.SelectRule(null))
                             viewModel.onIntent(AdminScreenIntent.ShowRuleEditor)
-                        }) {
-                            Text("Добавить правило")
-                        }
+                        },
+                        onEdit = {
+                            viewModel.onIntent(AdminScreenIntent.SelectRule(it))
+                            viewModel.onIntent(AdminScreenIntent.ShowRuleEditor)
+                        },
+                        onDelete = { viewModel.onIntent(AdminScreenIntent.DeleteRule(it)) }
+                    )
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        LazyColumn {
-                            items(state.rules) { rule ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 8.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(text = "Ключ: ${rule.symptomKey}")
-                                        Text(text = "Термин: ${rule.medicalTerm}")
-                                        Text(text = "Вес: ${rule.probabilityWeight}")
-                                        Text(text = "Вопросы: ${rule.clarifyingQuestions ?: "Нет"}")
-                                        Text(text = "Триггеры ответов: ${rule.answerTriggers ?: "Нет"}")
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Button(onClick = {
-                                                viewModel.onIntent(AdminScreenIntent.SelectRule(rule))
-                                                viewModel.onIntent(AdminScreenIntent.ShowRuleEditor)
-                                            }) {
-                                                Text("Редактировать")
-                                            }
-                                            Button(onClick = { viewModel.onIntent(AdminScreenIntent.DeleteRule(rule)) }) {
-                                                Text("Удалить")
-                                            }
-                                        }
-                                    }
-                                }
+                    3 -> AuditTab(state.auditEvents)
+                }
+            }
+        }
+    }
+
+    if (state.showUserEditor) {
+        UserEditorDialog(
+            user = state.selectedUser,
+            onSave = { viewModel.onIntent(AdminScreenIntent.SaveUser(it)) },
+            onDismiss = { viewModel.onIntent(AdminScreenIntent.HideUserEditor) },
+            viewModel = viewModel
+        )
+    }
+
+    if (state.showRuleEditor) {
+        RuleEditorDialog(
+            rule = state.selectedRule,
+            onSave = { viewModel.onIntent(AdminScreenIntent.SaveRule(it)) },
+            onDismiss = { viewModel.onIntent(AdminScreenIntent.HideRuleEditor) }
+        )
+    }
+}
+
+@Composable
+private fun AdminOverview(
+    metrics: AdminDashboardMetrics,
+    modelAvailable: Boolean,
+    modelVersion: String,
+    extractorVersion: String
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            AdminSectionCard("Диагностическая система") {
+                MetricRow("Pretrained model", if (modelAvailable) "доступна" else "недоступна")
+                MetricRow("Версия модели", modelVersion.ifBlank { "—" })
+                MetricRow("Версия extractor", extractorVersion.ifBlank { "—" })
+                Text(
+                    "Редактируемые правила управляют подсказками, уточнениями и medical terms, но не изменяют pretrained disease ranking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        item {
+            AdminSectionCard("Пользователи") {
+                MetricRow("Всего", metrics.users.toString())
+                MetricRow("Активных", metrics.activeUsers.toString())
+                MetricRow("Пациентов", metrics.patients.toString())
+                MetricRow("Врачей", metrics.doctors.toString())
+                MetricRow("Администраторов", metrics.admins.toString())
+            }
+        }
+        item {
+            AdminSectionCard("Обращения") {
+                MetricRow("Всего", metrics.assessments.toString())
+                MetricRow("RANKED", metrics.ranked.toString())
+                MetricRow("INSUFFICIENT_EVIDENCE", metrics.insufficientEvidence.toString())
+                MetricRow("OUT_OF_SCOPE", metrics.outOfScope.toString())
+                MetricRow("MODEL_UNAVAILABLE", metrics.modelUnavailable.toString())
+                MetricRow("Требуют внимания врача", metrics.needsDoctorAttention.toString())
+            }
+        }
+        item {
+            AdminSectionCard("Работа врача") {
+                MetricRow("Новых", metrics.newForDoctor.toString())
+                MetricRow("Связались", metrics.contacted.toString())
+                MetricRow("Закрыто", metrics.closed.toString())
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MetricRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun UsersTab(
+    users: List<User>,
+    search: String,
+    currentAdminId: Int,
+    errorMessage: String?,
+    onSearch: (String) -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (User) -> Unit,
+    onSetActive: (User, Boolean) -> Unit,
+    onDelete: (User) -> Unit
+) {
+    val query = search.trim()
+    val filtered = users.filter { user ->
+        query.isBlank() || user.fullName.contains(query, ignoreCase = true) ||
+            user.phone.contains(query, ignoreCase = true) ||
+            roleLabel(user.role).contains(query, ignoreCase = true)
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        OutlinedTextField(
+            value = search,
+            onValueChange = onSearch,
+            label = { Text("Поиск по ФИО, телефону или роли") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+            Text("Добавить пользователя")
+        }
+        errorMessage?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(filtered, key = { it.id }) { user ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(user.fullName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(user.phone)
+                        Text("Роль: ${roleLabel(user.role)}")
+                        Text(
+                            if (user.isActive) "Статус: активен" else "Статус: заблокирован",
+                            color = if (user.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                        user.age?.let { Text("Возраст: $it") }
+                        user.gender?.let { Text("Пол: $it") }
+                        user.specialty?.let { Text("Специальность: $it") }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(onClick = { onEdit(user) }, modifier = Modifier.weight(1f)) {
+                                Text("Редактировать")
+                            }
+                            Button(
+                                onClick = { onSetActive(user, !user.isActive) },
+                                modifier = Modifier.weight(1f),
+                                enabled = user.id != currentAdminId
+                            ) {
+                                Text(if (user.isActive) "Заблокировать" else "Разблокировать")
                             }
                         }
-                    }
-
-                    if (state.showRuleEditor) {
-                        RuleEditorDialog(
-                            rule = state.selectedRule,
-                            onSave = { rule ->
-                                viewModel.onIntent(AdminScreenIntent.SaveRule(rule))
-                                viewModel.onIntent(AdminScreenIntent.HideRuleEditor)
-                            },
-                            onDismiss = { viewModel.onIntent(AdminScreenIntent.HideRuleEditor) }
-                        )
+                        TextButton(
+                            onClick = { onDelete(user) },
+                            enabled = user.id != currentAdminId,
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Удалить")
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RulesTab(
+    rules: List<my.diplom.aritmia.data.RuleEntity>,
+    onAdd: () -> Unit,
+    onEdit: (my.diplom.aritmia.data.RuleEntity) -> Unit,
+    onDelete: (my.diplom.aritmia.data.RuleEntity) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text(
+            "Правила влияют на подсказки, уточняющие вопросы и отображаемые medical terms. Вес legacy-правила больше не показывается и не редактируется.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Добавить правило") }
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(rules, key = { it.id }) { rule ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Ключ: ${rule.symptomKey}", fontWeight = FontWeight.Bold)
+                        Text("Термин: ${rule.medicalTerm}")
+                        Text("Вопросы: ${rule.clarifyingQuestions ?: "Нет"}")
+                        Text("Триггеры: ${rule.answerTriggers ?: "Нет"}")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(onClick = { onEdit(rule) }, modifier = Modifier.weight(1f)) {
+                                Text("Редактировать")
+                            }
+                            TextButton(onClick = { onDelete(rule) }, modifier = Modifier.weight(1f)) {
+                                Text("Удалить")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+private fun AuditTab(events: List<my.diplom.aritmia.data.AuditEventEntity>) {
+    val formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (events.isEmpty()) {
+            item { Text("Административных изменений пока нет") }
+        }
+        items(events, key = { it.id }) { event ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(event.action, fontWeight = FontWeight.Bold)
+                    Text("${event.entityType} #${event.entityId ?: "—"}")
+                    event.details?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Text(
+                        "Администратор: ${event.adminId ?: "—"} · ${event.createdAt.format(formatter)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun roleLabel(role: Role): String = when (role) {
+    Role.PATIENT -> "Пациент"
+    Role.DOCTOR -> "Врач"
+    Role.ADMIN -> "Администратор"
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
@@ -286,143 +452,92 @@ fun UserEditorDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { focusManager.clearFocus() }
-                    )
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = state.tempFullName,
                     onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateFullName(it)) },
                     label = { Text("ФИО") },
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    isError = state.tempFullName.isNotBlank() && !state.tempFullName.matches(Regex("^[А-ЯA-Z][а-яa-z]+([\\s-][А-ЯA-Z][а-яa-z]+)*\$"))
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-
                 OutlinedTextField(
                     value = state.tempPhone,
                     onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdatePhone(it)) },
                     label = { Text("Номер телефона (+7-xxx-xxx-xx-xx)") },
                     modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = phoneMask,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Phone,
                         imeAction = ImeAction.Next
                     ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    visualTransformation = phoneMask,
-                    isError = state.tempPhone.isNotBlank() && state.tempPhone.length != 10
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-
                 OutlinedTextField(
                     value = state.tempPassword,
                     onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdatePassword(it)) },
-                    label = { Text("Пароль") },
+                    label = {
+                        Text(if (user == null) "Пароль" else "Новый пароль (необязательно)")
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Next
                     ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    isError = state.tempPassword.isNotBlank() && state.tempPassword.length < 6
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
-                Spacer(modifier = Modifier.height(8.dp))
 
                 Text("Роль:")
-                Spacer(modifier = Modifier.height(4.dp))
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(Role.entries) { roleOption ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable {
-                                    viewModel.onIntent(AdminScreenIntent.UpdateRole(roleOption))
-                                }
-                                .padding(end = 16.dp)
+                            modifier = Modifier.clickable {
+                                viewModel.onIntent(AdminScreenIntent.UpdateRole(roleOption))
+                            }
                         ) {
                             RadioButton(
                                 selected = state.tempRole == roleOption,
                                 onClick = { viewModel.onIntent(AdminScreenIntent.UpdateRole(roleOption)) }
                             )
-                            Text(
-                                when (roleOption) {
-                                    Role.PATIENT -> "Пациент"
-                                    Role.DOCTOR -> "Врач"
-                                    Role.ADMIN -> "Админ"
-                                }
-                            )
+                            Text(roleLabel(roleOption))
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = state.tempGender,
-                    onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateGender(it)) },
-                    label = { Text("Пол (необязательно)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                if (state.tempRole == Role.PATIENT) {
+                    OutlinedTextField(
+                        value = state.tempGender,
+                        onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateGender(it)) },
+                        label = { Text("Пол (необязательно)") },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = state.tempAge,
-                    onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateAge(it)) },
-                    label = { Text("Возраст (необязательно)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    isError = state.tempAge.isNotBlank() && (state.tempAge.toIntOrNull() ?: 0) !in 1..150
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = state.tempSpecialty,
-                    onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateSpecialty(it)) },
-                    label = { Text("Специальность (необязательно, для врачей)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { focusManager.clearFocus() }
+                    OutlinedTextField(
+                        value = state.tempAge,
+                        onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateAge(it)) },
+                        label = { Text("Возраст (необязательно)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                if (state.tempRole == Role.DOCTOR) {
+                    OutlinedTextField(
+                        value = state.tempSpecialty,
+                        onValueChange = { viewModel.onIntent(AdminScreenIntent.UpdateSpecialty(it)) },
+                        label = { Text("Специальность") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 state.errorMessage?.let {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                    Text(it, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
@@ -437,21 +552,22 @@ fun UserEditorDialog(
                             phone = state.tempPhone,
                             password = state.tempPassword,
                             role = state.tempRole,
-                            gender = state.tempGender,
+                            gender = state.tempGender.ifBlank { null },
                             age = state.tempAge.toIntOrNull(),
-                            specialty = state.tempSpecialty
+                            specialty = state.tempSpecialty.ifBlank { null },
+                            isActive = user?.isActive ?: true
                         )
                     )
                 },
-                enabled = state.tempFullName.isNotBlank() && state.tempPhone.isNotBlank() && state.tempPassword.isNotBlank()
+                enabled = state.tempFullName.isNotBlank() &&
+                    state.tempPhone.length == 10 &&
+                    (user != null || state.tempPassword.length >= 6)
             ) {
                 Text("Сохранить")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена")
-            }
+            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
 }
