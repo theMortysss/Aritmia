@@ -41,7 +41,7 @@ class PatientJourneyInstrumentedTest {
     }
 
     @Test
-    fun patientCanRegisterAbstainRankPersistLoginAndRestoreSession() {
+    fun patientCanRegisterContinueAbstentionRankPersistLoginAndRestoreSession() {
         clearPersistedSession()
 
         val phone = uniquePhone()
@@ -51,7 +51,8 @@ class PatientJourneyInstrumentedTest {
             "сердце стучит",
             "кружится голова"
         )
-        val fourComplaints = threeComplaints + "не хватает воздуха"
+        val fourthComplaint = "не хватает воздуха"
+        val fourComplaints = threeComplaints + fourthComplaint
 
         var scenario: ActivityScenario<MainActivity>? = ActivityScenario.launch(MainActivity::class.java)
         try {
@@ -87,15 +88,14 @@ class PatientJourneyInstrumentedTest {
             assertEquals(1, afterAbstention.size)
             assertEquals(threeComplaints.joinToString(". "), afterAbstention.single().userInput)
 
-            composeRule.onNodeWithText("Назад к вводу симптомов")
+            composeRule.onNodeWithText("Дополнить жалобы")
                 .performScrollTo()
                 .performClick()
-            waitForText(
-                "Симптомы пока не добавлены",
-                stage = "return to complaint entry after abstention"
-            )
+            threeComplaints.forEach { complaint ->
+                waitForText(complaint, stage = "restoring complaint '$complaint' for follow-up")
+            }
 
-            fourComplaints.forEach(::addComplaint)
+            addComplaint(fourthComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             waitForText(
                 "Возможные сердечно-сосудистые состояния",
@@ -146,8 +146,6 @@ class PatientJourneyInstrumentedTest {
                 timeoutMillis = 30_000
             )
 
-            // Close the real Activity and launch a brand-new one. MainActivity must reread
-            // the persisted patient id, validate it against Room and restore the symptoms route.
             scenario!!.close()
             scenario = null
 
