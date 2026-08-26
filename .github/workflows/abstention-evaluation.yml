@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/abstention-evaluation.yml
       - ml/**
+      - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedRussianOodExtractionTest.kt
   workflow_dispatch:
 
 concurrency:
@@ -16,10 +17,32 @@ concurrency:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Export concepts with real Kotlin extractor
+        run: |
+          ./gradlew testDebugUnitTest \
+            --tests my.diplom.aritmia.diagnosis.CuratedRussianOodExtractionTest \
+            --stacktrace --no-daemon
+          CURATED_JSON="$(find app/build build -type f -name 'curated_russian_ood_extractions.json' -print -quit 2>/dev/null || true)"
+          test -n "$CURATED_JSON"
+          echo "CURATED_JSON=$CURATED_JSON" >> "$GITHUB_ENV"
+          cat "$CURATED_JSON"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -81,6 +104,13 @@ jobs:
             --csv "$CSV_PATH" \
             --output scope_detector_report.json
 
+      - name: Evaluate curated Russian free-text OOD after Kotlin extraction
+        run: |
+          python ml/evaluate_curated_text_scope.py \
+            --csv "$CSV_PATH" \
+            --curated-json "$CURATED_JSON" \
+            --output curated_text_scope_report.json
+
       - name: Upload abstention reports
         uses: actions/upload-artifact@v4
         with:
@@ -89,4 +119,6 @@ jobs:
             abstention_report.json
             evidence_gate_report.json
             scope_detector_report.json
+            curated_text_scope_report.json
+            ${{ env.CURATED_JSON }}
           if-no-files-found: error
