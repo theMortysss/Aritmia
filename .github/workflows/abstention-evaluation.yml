@@ -9,6 +9,10 @@ on:
       - ml/**
   workflow_dispatch:
 
+concurrency:
+  group: abstention-evaluation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   evaluate:
     runs-on: ubuntu-latest
@@ -59,15 +63,23 @@ jobs:
               raise SystemExit(f'Unexpected dataset shape: {rows} x {len(header)}')
           PY
 
-      - name: Evaluate abstention and OOD operating points
+      - name: Evaluate baseline abstention and OOD operating points
         run: |
           python ml/evaluate_abstention.py \
             --csv "$CSV_PATH" \
             --output abstention_report.json
 
-      - name: Upload abstention report
+      - name: Evaluate explicit evidence gates
+        run: |
+          python ml/evaluate_evidence_gates.py \
+            --csv "$CSV_PATH" \
+            --output evidence_gate_report.json
+
+      - name: Upload abstention reports
         uses: actions/upload-artifact@v4
         with:
-          name: abstention-report
-          path: abstention_report.json
+          name: abstention-reports
+          path: |
+            abstention_report.json
+            evidence_gate_report.json
           if-no-files-found: error
