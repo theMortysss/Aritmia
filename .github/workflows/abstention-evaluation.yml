@@ -13,6 +13,7 @@ on:
       - app/src/test/java/my/diplom/aritmia/diagnosis/CuratedPretrainedMlpChallengeTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/FrozenRussianRobustnessChallengeTest.kt
       - app/src/test/java/my/diplom/aritmia/diagnosis/ExtractorMorphologyRobustnessTest.kt
+      - app/src/test/java/my/diplom/aritmia/diagnosis/DiseaseCatalogResearchExportTest.kt
   workflow_dispatch:
 
 concurrency:
@@ -39,7 +40,7 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Export concepts and exact pretrained MLP challenges with real Kotlin code
+      - name: Export concepts, catalog and exact pretrained MLP challenges with real Kotlin code
         run: |
           ./gradlew testDebugUnitTest \
             --tests my.diplom.aritmia.diagnosis.FreeTextSymptomExtractorTest \
@@ -48,23 +49,28 @@ jobs:
             --tests my.diplom.aritmia.diagnosis.CuratedScopeBoundaryExtractionTest \
             --tests my.diplom.aritmia.diagnosis.CuratedPretrainedMlpChallengeTest \
             --tests my.diplom.aritmia.diagnosis.FrozenRussianRobustnessChallengeTest \
+            --tests my.diplom.aritmia.diagnosis.DiseaseCatalogResearchExportTest \
             --stacktrace --no-daemon
           CURATED_JSON="$(find app/build build -type f -name 'curated_russian_ood_extractions.json' -print -quit 2>/dev/null || true)"
           BOUNDARY_JSON="$(find app/build build -type f -name 'curated_scope_boundary_extractions.json' -print -quit 2>/dev/null || true)"
           MLP_JSON="$(find app/build build -type f -name 'pretrained_mlp_curated_report.json' -print -quit 2>/dev/null || true)"
           ROBUSTNESS_JSON="$(find app/build build -type f -name 'frozen_russian_robustness_report.json' -print -quit 2>/dev/null || true)"
+          CATALOG_JSON="$(find app/build build -type f -name 'disease_catalog_weights.json' -print -quit 2>/dev/null || true)"
           test -n "$CURATED_JSON"
           test -n "$BOUNDARY_JSON"
           test -n "$MLP_JSON"
           test -n "$ROBUSTNESS_JSON"
+          test -n "$CATALOG_JSON"
           echo "CURATED_JSON=$CURATED_JSON" >> "$GITHUB_ENV"
           echo "BOUNDARY_JSON=$BOUNDARY_JSON" >> "$GITHUB_ENV"
           echo "MLP_JSON=$MLP_JSON" >> "$GITHUB_ENV"
           echo "ROBUSTNESS_JSON=$ROBUSTNESS_JSON" >> "$GITHUB_ENV"
+          echo "CATALOG_JSON=$CATALOG_JSON" >> "$GITHUB_ENV"
           cat "$CURATED_JSON"
           cat "$BOUNDARY_JSON"
           cat "$MLP_JSON"
           cat "$ROBUSTNESS_JSON"
+          cat "$CATALOG_JSON"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -120,6 +126,14 @@ jobs:
             --csv "$CSV_PATH" \
             --output evidence_gate_report.json
 
+      - name: Evaluate catalog specificity gate
+        run: |
+          python ml/evaluate_specificity_gate.py \
+            --csv "$CSV_PATH" \
+            --catalog-json "$CATALOG_JSON" \
+            --frozen-json "$ROBUSTNESS_JSON" \
+            --output specificity_gate_report.json
+
       - name: Evaluate complaint-concept scope detector
         run: |
           python ml/evaluate_scope_detector.py \
@@ -147,6 +161,7 @@ jobs:
           path: |
             abstention_report.json
             evidence_gate_report.json
+            specificity_gate_report.json
             scope_detector_report.json
             curated_text_scope_report.json
             curated_scope_boundary_report.json
@@ -154,4 +169,5 @@ jobs:
             ${{ env.BOUNDARY_JSON }}
             ${{ env.MLP_JSON }}
             ${{ env.ROBUSTNESS_JSON }}
+            ${{ env.CATALOG_JSON }}
           if-no-files-found: error
