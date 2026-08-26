@@ -11,11 +11,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
+import my.diplom.aritmia.data.AssessmentEntity
+import my.diplom.aritmia.data.AssessmentSnapshotCodec
+import my.diplom.aritmia.data.AssessmentWorkflow
+import my.diplom.aritmia.data.User
+import my.diplom.aritmia.diagnosis.DiseaseCatalog
+import my.diplom.aritmia.ui.screen.doctor.model.DoctorAssessmentItem
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenState
-import my.diplom.aritmia.ui.screen.doctor.model.SymptomItem
 import my.diplom.aritmia.ui.screen.doctor.model.resolveDateFilterUpdate
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 @RequiresApi(Build.VERSION_CODES.O)
@@ -27,7 +31,7 @@ class DoctorScreenViewModel @Inject constructor(
     private val _state = MutableStateFlow(DoctorScreenState())
     val state: StateFlow<DoctorScreenState> = _state.asStateFlow()
 
-    private val pageSize = 10
+    private var allAssessments: List<AssessmentEntity> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -35,48 +39,61 @@ class DoctorScreenViewModel @Inject constructor(
                 _state.update { it.copy(rules = rules) }
             }
         }
-        loadSymptoms()
+        viewModelScope.launch {
+            db.assessmentDao().observeAll().collect { rows ->
+                allAssessments = rows
+                renderAssessments()
+            }
+        }
     }
 
     fun onIntent(intent: DoctorScreenIntent) {
         when (intent) {
-            is DoctorScreenIntent.ChangePage -> {
+            is DoctorScreenIntent.ChangePage ->
                 _state.update { it.copy(page = intent.newPage) }
-                loadSymptoms()
-            }
 
             is DoctorScreenIntent.ApplyFilters -> {
                 _state.update {
                     it.copy(
-                        phoneFilter = intent.phone.trim().filter { c -> c.isDigit() },
+                        phoneFilter = intent.phone.trim().filter(Char::isDigit),
                         nameFilter = intent.name.trim(),
                         startDate = intent.startDate,
                         endDate = intent.endDate,
                         page = 0
                     )
                 }
-                loadSymptoms()
+                refreshRenderedAssessments()
             }
 
             is DoctorScreenIntent.UpdateTempFilter ->
                 _state.update {
                     it.copy(
-                        tempPhoneFilter = intent.phone?.filter { c -> c.isDigit() } ?: it.tempPhoneFilter,
+                        tempPhoneFilter = intent.phone?.filter(Char::isDigit) ?: it.tempPhoneFilter,
                         tempNameFilter = intent.name?.trim() ?: it.tempNameFilter,
                         tempStartDate = resolveDateFilterUpdate(it.tempStartDate, intent.startDate),
                         tempEndDate = resolveDateFilterUpdate(it.tempEndDate, intent.endDate)
                     )
                 }
 
-            is DoctorScreenIntent.ResetFilters ->
+            is DoctorScreenIntent.ResetFilters -> {
                 _state.update {
                     it.copy(
+                        phoneFilter = "",
+                        nameFilter = "",
+                        startDate = null,
+                        endDate = null,
                         tempPhoneFilter = "",
                         tempNameFilter = "",
                         tempStartDate = null,
-                        tempEndDate = null
+                        tempEndDate = null,
+                        statusFilter = "ALL",
+                        workflowFilter = "ALL",
+                        attentionOnly = false,
+                        page = 0
                     )
                 }
+                refreshRenderedAssessments()
+            }
 
             is DoctorScreenIntent.ShowFilterSheet ->
                 _state.update {
@@ -95,6 +112,38 @@ class DoctorScreenViewModel @Inject constructor(
             is DoctorScreenIntent.ChangeTab ->
                 _state.update { it.copy(selectedTabIndex = intent.tabIndex) }
 
+            is DoctorScreenIntent.SetStatusFilter -> {
+                _state.update { it.copy(statusFilter = intent.status) }
+                refreshRenderedAssessments()
+            }
+
+            is DoctorScreenIntent.SetWorkflowFilter -> {
+                _state.update { it.copy(workflowFilter = intent.status) }
+                refreshRenderedAssessments()
+            }
+
+            is DoctorScreenIntent.SetAttentionOnly -> {
+                _state.update { it.copy(attentionOnly = intent.enabled) }
+                refreshRenderedAssessments()
+            }
+
+            is DoctorScreenIntent.OpenAssessment -> openAssessment(intent.assessmentId)
+            is DoctorScreenIntent.CloseAssessment ->
+                _state.update {
+                    it.copy(
+                        selectedAssessment = null,
+                        patientTimeline = emptyList(),
+                        showAssessmentDialog = false,
+                        doctorNoteDraft = ""
+                    )
+                }
+
+            is DoctorScreenIntent.UpdateDoctorNote ->
+                _state.update { it.copy(doctorNoteDraft = intent.note) }
+
+            is DoctorScreenIntent.SaveAssessmentWorkflow ->
+                saveAssessmentWorkflow(intent.workflowStatus)
+
             is DoctorScreenIntent.ShowRuleEditor ->
                 _state.update { it.copy(showRuleEditor = true) }
 
@@ -104,113 +153,129 @@ class DoctorScreenViewModel @Inject constructor(
             is DoctorScreenIntent.SelectRule ->
                 _state.update { it.copy(selectedRule = intent.rule) }
 
-            is DoctorScreenIntent.SaveRule -> {
-                viewModelScope.launch {
-                    if (intent.rule.id == 0) db.ruleDao().insert(intent.rule)
-                    else db.ruleDao().update(intent.rule)
-                }
+            is DoctorScreenIntent.SaveRule -> viewModelScope.launch {
+                if (intent.rule.id == 0) db.ruleDao().insert(intent.rule)
+                else db.ruleDao().update(intent.rule)
             }
 
-            is DoctorScreenIntent.DeleteRule -> {
-                viewModelScope.launch { db.ruleDao().delete(intent.rule) }
+            is DoctorScreenIntent.DeleteRule -> viewModelScope.launch {
+                db.ruleDao().delete(intent.rule)
             }
 
             is DoctorScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }
 
-            is DoctorScreenIntent.MarkPatientAsCalled -> {
-                viewModelScope.launch {
-                    db.symptomDao().updateCalledByDoctor(intent.symptomId, intent.called)
-                    _state.update {
-                        it.copy(symptoms = it.symptoms.map { item ->
-                            if (item.symptom.id == intent.symptomId) {
-                                item.copy(symptom = item.symptom.copy(calledByDoctor = intent.called))
-                            } else {
-                                item
-                            }
-                        })
-                    }
-                }
+            is DoctorScreenIntent.MarkPatientAsCalled -> viewModelScope.launch {
+                db.symptomDao().updateCalledByDoctor(intent.symptomId, intent.called)
             }
         }
     }
 
-    private fun loadSymptoms() {
+    private fun refreshRenderedAssessments() {
+        viewModelScope.launch { renderAssessments() }
+    }
+
+    private suspend fun renderAssessments() {
+        _state.update { it.copy(isLoading = true) }
+        val patients = db.userDao().getAllPatients().associateBy { it.id }
+        val current = _state.value
+
+        val filtered = allAssessments
+            .asSequence()
+            .filter { assessment ->
+                val user = patients[assessment.patientId]
+                val phoneMatches = current.phoneFilter.isBlank() ||
+                    user?.phone.orEmpty().filter(Char::isDigit).takeLast(10)
+                        .contains(current.phoneFilter)
+                val nameMatches = current.nameFilter.isBlank() ||
+                    user?.fullName.orEmpty().contains(current.nameFilter, ignoreCase = true)
+                val startMatches = current.startDate == null || assessment.createdAt >= current.startDate
+                val endMatches = current.endDate == null || assessment.createdAt <= current.endDate
+                val assessmentStatusMatches = current.statusFilter == "ALL" ||
+                    assessment.status == current.statusFilter
+                val workflowMatches = current.workflowFilter == "ALL" ||
+                    assessment.workflowStatus == current.workflowFilter
+                val attentionMatches = !current.attentionOnly || assessment.needsDoctorAttention
+
+                phoneMatches && nameMatches && startMatches && endMatches &&
+                    assessmentStatusMatches && workflowMatches && attentionMatches
+            }
+            .sortedWith(
+                compareByDescending<AssessmentEntity> { it.needsDoctorAttention }
+                    .thenByDescending { it.createdAt }
+            )
+            .map { assessment -> buildItem(assessment, patients[assessment.patientId]) }
+            .toList()
+
+        val selectedId = current.selectedAssessment?.assessment?.id
+        val selected = selectedId?.let { id ->
+            filtered.firstOrNull { it.assessment.id == id }
+                ?: allAssessments.firstOrNull { it.id == id }
+                    ?.let { buildItem(it, patients[it.patientId]) }
+        }
+        val timeline = selected?.assessment?.patientId?.let { patientId ->
+            allAssessments
+                .filter { it.patientId == patientId }
+                .sortedByDescending { it.createdAt }
+                .map { buildItem(it, patients[patientId]) }
+        }.orEmpty()
+
+        _state.update {
+            it.copy(
+                assessments = filtered,
+                totalCount = filtered.size,
+                selectedAssessment = selected,
+                patientTimeline = timeline,
+                isLoading = false
+            )
+        }
+    }
+
+    private fun buildItem(assessment: AssessmentEntity, user: User?): DoctorAssessmentItem {
+        val conceptLabels = AssessmentSnapshotCodec.decodeConceptIds(assessment.recognizedConceptIds)
+            .map { id -> DiseaseCatalog.concepts.firstOrNull { it.id == id }?.label ?: id }
+        return DoctorAssessmentItem(
+            assessment = assessment,
+            user = user,
+            conceptLabels = conceptLabels,
+            candidates = AssessmentSnapshotCodec.decodeCandidates(assessment.modelCandidates)
+        )
+    }
+
+    private fun openAssessment(assessmentId: Int) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
-            val offset = _state.value.page * pageSize
-
-            val symptoms = db.symptomDao().getSymptomsFiltered(
-                phoneFilter = _state.value.phoneFilter,
-                nameFilter = _state.value.nameFilter,
-                minProbability = 0,
-                startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                limit = pageSize,
-                offset = offset
-            )
-
-            val totalCount = db.symptomDao().getFilteredCount(
-                phoneFilter = _state.value.phoneFilter,
-                nameFilter = _state.value.nameFilter,
-                minProbability = 0,
-                startDate = _state.value.startDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                endDate = _state.value.endDate?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-            )
-
-            val allPatients = db.userDao().getAllPatients()
-            val rules = _state.value.rules
-
-            val items = symptoms.map { symptom ->
-                val user = allPatients.find { it.id == symptom.patientId }
-                val userSymptoms = symptom.userInput.split(". ").filter { it.isNotBlank() }
-                val medTerms = symptom.medicalTerm?.split(", ")?.filter { it.isNotBlank() }
-                    ?: emptyList()
-
-                val recognized = mutableListOf<String>()
-                val unrecognized = mutableListOf<String>()
-                val recTerms = mutableListOf<String>()
-                val clarAnswers = symptom.clarifyingAnswers?.split(";")
-                    ?.filter { it.isNotBlank() }
-                    ?.associate { e ->
-                        val (k, v) = e.split("=")
-                        k to v.split(",").filter { it.isNotBlank() }
-                    } ?: emptyMap()
-
-                userSymptoms.forEachIndexed { idx, s ->
-                    val match = rules.find { s.contains(it.symptomKey, ignoreCase = true) }
-                    val term = medTerms.getOrNull(idx)
-                    if (match != null && term != null && term != "Нераспознанный симптом") {
-                        val possible = buildList {
-                            add(match.medicalTerm)
-                            match.answerTriggers?.split(";")?.forEach { t ->
-                                t.split("=").getOrNull(1)?.let { add(it) }
-                            }
-                        }
-                        if (possible.contains(term)) {
-                            recognized.add(s)
-                            recTerms.add(term)
-                        } else {
-                            unrecognized.add(s)
-                        }
-                    } else {
-                        unrecognized.add(s)
-                    }
-                }
-
-                SymptomItem(
-                    symptom = symptom,
-                    user = user,
-                    recognizedSymptoms = recognized,
-                    unrecognizedSymptoms = unrecognized,
-                    recognizedMedicalTerms = recTerms,
-                    clarifyingAnswers = clarAnswers
+            val row = allAssessments.firstOrNull { it.id == assessmentId }
+                ?: db.assessmentDao().getById(assessmentId)
+                ?: return@launch
+            val patient = db.userDao().getPatientById(row.patientId)
+            val item = buildItem(row, patient)
+            val timeline = db.assessmentDao().getByPatientId(row.patientId)
+                .map { buildItem(it, patient) }
+            _state.update {
+                it.copy(
+                    selectedAssessment = item,
+                    patientTimeline = timeline,
+                    doctorNoteDraft = row.doctorNote.orEmpty(),
+                    showAssessmentDialog = true
                 )
             }
+        }
+    }
 
-            _state.update {
-                it.copy(totalCount = totalCount, symptoms = items, isLoading = false)
-            }
+    private fun saveAssessmentWorkflow(workflowStatus: String) {
+        if (workflowStatus !in AssessmentWorkflow.values) return
+        val selected = _state.value.selectedAssessment ?: return
+        val note = _state.value.doctorNoteDraft.trim().takeIf { it.isNotBlank() }
+        val needsAttention = workflowStatus == AssessmentWorkflow.NEW ||
+            workflowStatus == AssessmentWorkflow.CONTACT_REQUIRED
+
+        viewModelScope.launch {
+            db.assessmentDao().updateWorkflow(
+                assessmentId = selected.assessment.id,
+                workflowStatus = workflowStatus,
+                doctorNote = note,
+                needsDoctorAttention = needsAttention
+            )
         }
     }
 }
