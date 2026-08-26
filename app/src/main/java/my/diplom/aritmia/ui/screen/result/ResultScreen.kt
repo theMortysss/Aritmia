@@ -35,6 +35,7 @@ fun ResultScreen(
     userId: Int,
     onLogout: () -> Unit,
     onBack: () -> Unit,
+    onContinue: () -> Unit,
     navController: NavController,
     sharedViewModel: SharedViewModel,
     viewModel: ResultViewModel = hiltViewModel()
@@ -84,11 +85,31 @@ fun ResultScreen(
 
                 SafetyCard(state.diseaseAssessmentStatus)
 
-                Button(
-                    onClick = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Назад к вводу симптомов", modifier = Modifier.padding(8.dp))
+                if (state.diseaseAssessmentStatus == DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE) {
+                    Button(
+                        onClick = onContinue,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Дополнить жалобы", modifier = Modifier.padding(8.dp))
+                    }
+                    Text(
+                        "Уже введённые жалобы будут сохранены. Добавьте только другие реально присутствующие симптомы и повторите оценку.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Назад к вводу симптомов", modifier = Modifier.padding(8.dp))
+                    }
+                } else {
+                    Button(
+                        onClick = { viewModel.onIntent(ResultScreenIntent.NavigateBack) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Назад к вводу симптомов", modifier = Modifier.padding(8.dp))
+                    }
                 }
             }
         }
@@ -229,7 +250,7 @@ private fun DiseaseAssessmentCard(
                         "Распознано сердечно-сосудистых признаков: $recognizedConceptCount. Этого объёма информации недостаточно для устойчивого top-5 ранжирования, поэтому приложение не распределяет уверенность модели между заболеваниями."
                     )
                     Text(
-                        "Добавьте в свободной форме другие реально присутствующие жалобы. Если симптомы сохраняются, усиливаются или вызывают тревогу, обратитесь к врачу.",
+                        "Можно продолжить это же обращение: уже введённые жалобы сохранятся, а вы добавите только другие реально присутствующие симптомы.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

@@ -138,9 +138,21 @@ class SymptomsViewModel @Inject constructor(
         }
     }
 
-    fun resetDiagnosedState() {
+    /**
+     * Prepare a fresh complaint-entry screen. A follow-up route may provide the complaints from
+     * the insufficient-evidence assessment; the normal route passes an empty list and preserves
+     * the previous start-over behavior.
+     */
+    fun resetDiagnosedState(initialSymptoms: List<String> = emptyList()) {
         _state.update {
-            it.copy(navigateToDiagnose = false, isDiagnosed = false, symptoms = emptyList())
+            it.copy(
+                navigateToDiagnose = false,
+                isDiagnosed = false,
+                symptoms = initialSymptoms.distinct(),
+                newSymptom = "",
+                suggestions = emptyList(),
+                showDeleteDialog = null
+            )
         }
     }
 }

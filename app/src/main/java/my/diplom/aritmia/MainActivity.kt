@@ -138,6 +138,27 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                composable("symptoms-followup") {
+                    var rules by remember { mutableStateOf<List<RuleEntity>>(emptyList()) }
+                    LaunchedEffect(Unit) { rules = db.ruleDao().getAllRules() }
+
+                    SymptomsScreen(
+                        initialSymptoms = sharedViewModel.symptoms.value,
+                        onDiagnose = { symptomList ->
+                            sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
+                            val hasQuestions = symptomList.any { symptom ->
+                                rules.any { rule ->
+                                    symptom.contains(rule.symptomKey, ignoreCase = true) &&
+                                        rule.clarifyingQuestions != null
+                                }
+                            }
+                            if (hasQuestions) navController.navigate("clarify")
+                            else navController.navigate("result")
+                        },
+                        onLogout = onLogout
+                    )
+                }
+
                 composable("clarify") {
                     val symptoms = sharedViewModel.symptoms.value
                     val userId = sharedViewModel.userId.value
@@ -195,6 +216,7 @@ class MainActivity : ComponentActivity() {
                             userId = userId,
                             onLogout = onLogout,
                             onBack = { navController.popBackStack("symptoms", inclusive = false) },
+                            onContinue = { navController.navigate("symptoms-followup") },
                             navController = navController,
                             sharedViewModel = sharedViewModel
                         )
