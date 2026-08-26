@@ -1,6 +1,7 @@
 package my.diplom.aritmia
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -201,11 +202,7 @@ class AdminDoctorJourneyInstrumentedTest {
                 .performScrollTo()
                 .performClick()
 
-            composeRule.waitUntil(15_000) {
-                runBlocking {
-                    db.assessmentDao().getById(assessment.id)?.workflowStatus == AssessmentWorkflow.REVIEWED
-                }
-            }
+            waitForWorkflow(assessment.id, AssessmentWorkflow.REVIEWED)
             val updated = runBlocking { db.assessmentDao().getById(assessment.id) }!!
             assertEquals(AssessmentWorkflow.REVIEWED, updated.workflowStatus)
             assertEquals("Пациенту рекомендована очная консультация", updated.doctorNote)
@@ -255,6 +252,23 @@ class AdminDoctorJourneyInstrumentedTest {
             )
         )
         db.userDao().getUserByPhoneAndRole(formatted, role)!!
+    }
+
+    private fun waitForWorkflow(
+        assessmentId: Int,
+        expectedStatus: String,
+        timeoutMillis: Long = 15_000
+    ) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val current = runBlocking { db.assessmentDao().getById(assessmentId)?.workflowStatus }
+            if (current == expectedStatus) return
+            SystemClock.sleep(100)
+        }
+        val actual = runBlocking { db.assessmentDao().getById(assessmentId)?.workflowStatus }
+        throw AssertionError(
+            "Timed out waiting for assessment #$assessmentId workflow '$expectedStatus'; actual='$actual'"
+        )
     }
 
     private fun clickExactText(text: String, scrollTo: Boolean = false) {
