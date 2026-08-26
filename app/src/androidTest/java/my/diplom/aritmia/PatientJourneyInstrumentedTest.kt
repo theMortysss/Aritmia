@@ -1,6 +1,7 @@
 package my.diplom.aritmia
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -31,12 +32,12 @@ class PatientJourneyInstrumentedTest {
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
 
+    private val prefs
+        get() = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+
     @After
     fun clearPersistedSession() {
-        context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .commit()
+        prefs.edit().clear().commit()
     }
 
     @Test
@@ -57,19 +58,30 @@ class PatientJourneyInstrumentedTest {
             lateinit var db: AppDatabase
             scenario!!.onActivity { activity -> db = activity.db }
             waitForSeedRules(db)
-            waitForText("Вход в приложение")
+            waitForText("Вход в приложение", stage = "initial login screen")
 
             registerPatient(phone, password)
-            waitForText("Симптомы пока не добавлены")
-
-            val prefs = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-            val patientId = prefs.getInt("current_patient_id", -1)
+            val patientId = waitForPatientSession(
+                stage = "patient registration",
+                timeoutMillis = 30_000
+            )
+            waitForText(
+                "Симптомы пока не добавлены",
+                stage = "navigation after patient registration",
+                timeoutMillis = 30_000
+            )
             assertTrue("Registration must persist the patient session", patientId > 0)
 
             threeComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
-            waitForText("Недостаточно признаков для ранжирования заболеваний")
-            waitForText("Распознано сердечно-сосудистых признаков: 3.")
+            waitForText(
+                "Недостаточно признаков для ранжирования заболеваний",
+                stage = "three-concept abstention result"
+            )
+            waitForText(
+                "Распознано сердечно-сосудистых признаков: 3.",
+                stage = "three-concept evidence count"
+            )
 
             val afterAbstention = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
             assertEquals(1, afterAbstention.size)
@@ -78,12 +90,21 @@ class PatientJourneyInstrumentedTest {
             composeRule.onNodeWithText("Назад к вводу симптомов")
                 .performScrollTo()
                 .performClick()
-            waitForText("Симптомы пока не добавлены")
+            waitForText(
+                "Симптомы пока не добавлены",
+                stage = "return to complaint entry after abstention"
+            )
 
             fourComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
-            waitForText("Возможные сердечно-сосудистые состояния")
-            waitForTextContaining("Фибрилляция / трепетание предсердий")
+            waitForText(
+                "Возможные сердечно-сосудистые состояния",
+                stage = "four-concept ranked result"
+            )
+            waitForTextContaining(
+                "Фибрилляция / трепетание предсердий",
+                stage = "atrial fibrillation top candidate"
+            )
 
             val afterRanking = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
             assertEquals(2, afterRanking.size)
@@ -96,14 +117,25 @@ class PatientJourneyInstrumentedTest {
             )
 
             composeRule.onNodeWithText("Выйти").performClick()
-            waitForText("Вы уверены, что хотите выйти?")
+            waitForText(
+                "Вы уверены, что хотите выйти?",
+                stage = "logout confirmation dialog"
+            )
             composeRule.onNodeWithText("Да").performClick()
-            waitForText("Вход в приложение")
-            assertEquals(-1, prefs.getInt("current_patient_id", -1))
+            waitForNoPatientSession(stage = "logout")
+            waitForText("Вход в приложение", stage = "login screen after logout")
 
             loginPatient(phone, password)
-            waitForText("Симптомы пока не добавлены")
-            assertEquals(patientId, prefs.getInt("current_patient_id", -1))
+            waitForPatientSession(
+                expectedPatientId = patientId,
+                stage = "patient login",
+                timeoutMillis = 30_000
+            )
+            waitForText(
+                "Симптомы пока не добавлены",
+                stage = "navigation after patient login",
+                timeoutMillis = 30_000
+            )
 
             // Close the real Activity and launch a brand-new one. MainActivity must reread
             // the persisted patient id, validate it against Room and restore the symptoms route.
@@ -111,7 +143,11 @@ class PatientJourneyInstrumentedTest {
             scenario = null
 
             ActivityScenario.launch(MainActivity::class.java).use {
-                waitForText("Симптомы пока не добавлены")
+                waitForText(
+                    "Симптомы пока не добавлены",
+                    stage = "patient session restore after activity relaunch",
+                    timeoutMillis = 30_000
+                )
                 assertTrue(
                     "A restored patient session must not return to login",
                     composeRule.onAllNodesWithText("Вход в приложение")
@@ -151,7 +187,7 @@ class PatientJourneyInstrumentedTest {
         val input = composeRule.onAllNodes(hasSetTextAction())[0]
         input.performTextReplacement(text)
         input.performImeAction()
-        waitForText(text)
+        waitForText(text, stage = "adding complaint '$text'")
     }
 
     private fun replaceEditableField(index: Int, value: String) {
@@ -160,17 +196,78 @@ class PatientJourneyInstrumentedTest {
             .performTextReplacement(value)
     }
 
-    private fun waitForText(text: String, timeoutMillis: Long = 15_000) {
-        composeRule.waitUntil(timeoutMillis) {
-            composeRule.onAllNodesWithText(text, substring = false)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+    private fun waitForText(
+        text: String,
+        stage: String,
+        timeoutMillis: Long = 15_000
+    ) {
+        try {
+            composeRule.waitUntil(timeoutMillis) {
+                composeRule.onAllNodesWithText(text, substring = false)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+        } catch (error: Throwable) {
+            throw AssertionError("Timed out during $stage waiting for exact text '$text'", error)
         }
     }
 
-    private fun waitForTextContaining(text: String, timeoutMillis: Long = 15_000) {
-        composeRule.waitUntil(timeoutMillis) {
-            composeRule.onAllNodesWithText(text, substring = true)
+    private fun waitForTextContaining(
+        text: String,
+        stage: String,
+        timeoutMillis: Long = 15_000
+    ) {
+        try {
+            composeRule.waitUntil(timeoutMillis) {
+                composeRule.onAllNodesWithText(text, substring = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+        } catch (error: Throwable) {
+            throw AssertionError("Timed out during $stage waiting for text containing '$text'", error)
+        }
+    }
+
+    private fun waitForPatientSession(
+        expectedPatientId: Int? = null,
+        stage: String,
+        timeoutMillis: Long
+    ): Int {
+        val deadline = SystemClock.uptimeMillis() + timeoutMillis
+        while (SystemClock.uptimeMillis() < deadline) {
+            val patientId = prefs.getInt("current_patient_id", -1)
+            if (patientId > 0 && (expectedPatientId == null || patientId == expectedPatientId)) {
+                return patientId
+            }
+            SystemClock.sleep(50)
+        }
+        throw AssertionError(
+            "Timed out during $stage waiting for persisted patient session. " +
+                "Current patient id=${prefs.getInt("current_patient_id", -1)}; " +
+                "visible auth error=${visibleAuthError() ?: "none"}"
+        )
+    }
+
+    private fun waitForNoPatientSession(stage: String, timeoutMillis: Long = 10_000) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMillis
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (prefs.getInt("current_patient_id", -1) == -1) return
+            SystemClock.sleep(50)
+        }
+        throw AssertionError("Timed out during $stage waiting for patient session to clear")
+    }
+
+    private fun visibleAuthError(): String? {
+        val errors = listOf(
+            "ФИО должно содержать только буквы, слова с заглавной буквы",
+            "Телефон должен содержать ровно 10 цифр",
+            "Возраст должен быть от 1 до 150",
+            "Пароль должен содержать минимум 6 символов",
+            "Пользователь с таким номером и ролью уже существует",
+            "Неверный телефон или пароль"
+        )
+        return errors.firstOrNull { message ->
+            composeRule.onAllNodesWithText(message, substring = false)
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
