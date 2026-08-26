@@ -17,7 +17,6 @@ import kotlinx.coroutines.withContext
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.Role
 import my.diplom.aritmia.data.User
-import my.diplom.aritmia.nn.NetworkRepository
 import my.diplom.aritmia.security.PasswordHasher
 import my.diplom.aritmia.ui.screen.admin.model.AdminScreenIntent
 import my.diplom.aritmia.ui.screen.admin.model.AdminScreenState
@@ -28,7 +27,6 @@ import javax.inject.Inject
 @HiltViewModel
 class AdminScreenViewModel @Inject constructor(
     private val db: AppDatabase,
-    private val networkRepository: NetworkRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     private val _state = MutableStateFlow(AdminScreenState())
@@ -55,8 +53,6 @@ class AdminScreenViewModel @Inject constructor(
                     selectedUser = intent.user,
                     tempFullName = intent.user?.fullName ?: "",
                     tempPhone = intent.user?.phone?.filter { char -> char.isDigit() }?.takeLast(10) ?: "",
-                    // Никогда не показываем сохранённый хэш/пароль в редакторе.
-                    // Пустое поле для существующего пользователя означает «не менять пароль».
                     tempPassword = "",
                     tempRole = intent.user?.role ?: Role.PATIENT,
                     tempGender = intent.user?.gender ?: "",
@@ -95,12 +91,10 @@ class AdminScreenViewModel @Inject constructor(
             }
             is AdminScreenIntent.SaveRule -> viewModelScope.launch {
                 if (intent.rule.id == 0) db.ruleDao().insert(intent.rule) else db.ruleDao().update(intent.rule)
-                retrainAfterRuleChange()
                 onIntent(AdminScreenIntent.LoadData)
             }
             is AdminScreenIntent.DeleteRule -> viewModelScope.launch {
                 db.ruleDao().delete(intent.rule)
-                retrainAfterRuleChange()
                 onIntent(AdminScreenIntent.LoadData)
             }
             is AdminScreenIntent.Logout -> _state.update { it.copy(logout = true) }
@@ -157,10 +151,5 @@ class AdminScreenViewModel @Inject constructor(
             if (updatedUser.id == 0) db.userDao().insert(updatedUser) else db.userDao().update(updatedUser)
             onIntent(AdminScreenIntent.LoadData)
         }
-    }
-
-    private suspend fun retrainAfterRuleChange() {
-        val updatedRules = db.ruleDao().getAllRules()
-        networkRepository.retrain(updatedRules)
     }
 }
