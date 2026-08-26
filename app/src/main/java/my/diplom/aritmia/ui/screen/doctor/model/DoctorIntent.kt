@@ -12,13 +12,18 @@ sealed class DoctorScreenIntent {
         val startDate: LocalDateTime?,
         val endDate: LocalDateTime?
     ) : DoctorScreenIntent()
+
+    /**
+     * LocalDateTime.MIN means that a date field was not supplied and must stay unchanged.
+     * Explicit null means that the user cleared that date filter.
+     */
     data class UpdateTempFilter(
         val phone: String? = null,
         val name: String? = null,
-        val minProbability: Int? = null,
-        val startDate: LocalDateTime? = null,
-        val endDate: LocalDateTime? = null
+        val startDate: LocalDateTime? = LocalDateTime.MIN,
+        val endDate: LocalDateTime? = LocalDateTime.MIN
     ) : DoctorScreenIntent()
+
     object ResetFilters : DoctorScreenIntent()
     object ShowFilterSheet : DoctorScreenIntent()
     object HideFilterSheet : DoctorScreenIntent()
