@@ -11,7 +11,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
+import my.diplom.aritmia.data.AssessmentEntity
+import my.diplom.aritmia.data.AssessmentSnapshotCodec
+import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.RuleEntity
+import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.DiseaseAssessment
+import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
@@ -69,11 +75,10 @@ class ResultViewModel @Inject constructor(
     private fun loadData(userId: Int) {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
-            val allSymptoms = db.symptomDao().getAllSymptoms()
-            val diagnosis = allSymptoms.lastOrNull { it.patientId == userId }
+            val diagnosis = db.symptomDao().getAllSymptoms().lastOrNull { it.patientId == userId }
             val rules = db.ruleDao().getAllRules()
 
-            if (diagnosis != null && rules.isNotEmpty()) {
+            if (diagnosis != null) {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
 
@@ -82,6 +87,7 @@ class ResultViewModel @Inject constructor(
                     complaints = userComplaints,
                     limit = 5
                 )
+                persistAssessment(diagnosis, assessment)
 
                 _state.update {
                     it.copy(
@@ -124,8 +130,6 @@ class ResultViewModel @Inject constructor(
                 resolveSymptomTerm(s, rules, answers).medicalTerm
             }.joinToString(", ")
 
-            // Legacy probability fields remain in Room only for schema/history compatibility.
-            // They are no longer recomputed by the retired binary MLP.
             val updatedDiagnosis = diagnosis.copy(
                 userInput = updatedInput,
                 medicalTerm = newMedTerms.ifBlank { null },
@@ -147,6 +151,7 @@ class ResultViewModel @Inject constructor(
                     complaints = updatedSymptoms,
                     limit = 5
                 )
+                persistAssessment(updatedDiagnosis, assessment)
                 _state.update {
                     it.copy(
                         diagnosis = updatedDiagnosis,
@@ -161,6 +166,38 @@ class ResultViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun persistAssessment(
+        diagnosis: SymptomEntity,
+        assessment: DiseaseAssessment
+    ) {
+        val existing = db.assessmentDao().getBySourceSymptomId(diagnosis.id)
+        val defaultNeedsAttention = assessment.status != DiseaseAssessmentStatus.RANKED
+        val preserveDoctorWorkflow = existing != null && existing.workflowStatus != AssessmentWorkflow.NEW
+
+        val snapshot = AssessmentEntity(
+            id = existing?.id ?: 0,
+            sourceSymptomId = diagnosis.id,
+            patientId = diagnosis.patientId,
+            complaints = diagnosis.userInput,
+            status = assessment.status.name,
+            recognizedConceptIds = AssessmentSnapshotCodec.encodeConceptIds(assessment.recognizedConceptIds),
+            modelCandidates = AssessmentSnapshotCodec.encodeCandidates(assessment.candidates),
+            modelVersion = DiseaseNetworkRepository.MODEL_VERSION,
+            extractorVersion = DiseaseNetworkRepository.EXTRACTOR_VERSION,
+            createdAt = existing?.createdAt ?: diagnosis.createdAt,
+            workflowStatus = existing?.workflowStatus ?: AssessmentWorkflow.NEW,
+            needsDoctorAttention = if (preserveDoctorWorkflow) {
+                existing?.needsDoctorAttention ?: defaultNeedsAttention
+            } else {
+                defaultNeedsAttention
+            },
+            doctorNote = existing?.doctorNote
+        )
+
+        if (existing == null) db.assessmentDao().insert(snapshot)
+        else db.assessmentDao().update(snapshot)
     }
 
     private data class SymptomClassification(
