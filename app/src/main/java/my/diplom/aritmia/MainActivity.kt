@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 when {
                     savedPatientId != null -> {
                         val patient = db.userDao().getUserByIdAndRole(savedPatientId, Role.PATIENT)
-                        if (patient != null) {
+                        if (patient != null && patient.isActive) {
                             sharedViewModel.setData(emptyList(), patient.id)
                         } else {
                             clearPersistedSession()
@@ -67,14 +67,14 @@ class MainActivity : ComponentActivity() {
                     }
                     savedDoctorId != null -> {
                         val doctor = db.userDao().getUserByIdAndRole(savedDoctorId, Role.DOCTOR)
-                        if (doctor == null) {
+                        if (doctor == null || !doctor.isActive) {
                             clearPersistedSession()
                             navController.navigate("login") { popUpTo(0) { inclusive = true } }
                         }
                     }
                     savedAdminId != null -> {
                         val admin = db.userDao().getUserByIdAndRole(savedAdminId, Role.ADMIN)
-                        if (admin == null) {
+                        if (admin == null || !admin.isActive) {
                             clearPersistedSession()
                             navController.navigate("login") { popUpTo(0) { inclusive = true } }
                         }
