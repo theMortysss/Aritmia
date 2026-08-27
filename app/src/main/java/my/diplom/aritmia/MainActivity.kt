@@ -86,13 +86,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun navigateToLoginAndClearGraph() {
+                navController.navigate("login") {
+                    popUpTo(navController.graph.id) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+
             val onLogout = {
                 clearPersistedSession()
                 sharedViewModel.clearData()
-                navController.navigate("login") {
-                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                    launchSingleTop = true
-                }
+                navigateToLoginAndClearGraph()
             }
 
             validatedStartDestination?.let { startDestination ->
@@ -157,12 +161,7 @@ class MainActivity : ComponentActivity() {
                         val initialAnswers = sharedViewModel.answers.value
 
                         if (symptoms.isEmpty() || userId == -1) {
-                            LaunchedEffect(Unit) {
-                                navController.navigate("login") {
-                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
+                            LaunchedEffect(Unit) { navigateToLoginAndClearGraph() }
                         } else {
                             ClarifyScreen(
                                 symptoms = symptoms,
@@ -200,12 +199,7 @@ class MainActivity : ComponentActivity() {
                     composable("result") {
                         val userId = sharedViewModel.userId.value
                         if (userId == -1) {
-                            LaunchedEffect(Unit) {
-                                navController.navigate("login") {
-                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
+                            LaunchedEffect(Unit) { navigateToLoginAndClearGraph() }
                         } else {
                             ResultScreen(
                                 userId = userId,
