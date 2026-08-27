@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -133,6 +134,7 @@ class PatientJourneyInstrumentedTest {
                 stage = "clean login stack before scenario teardown"
             )
             composeRule.waitForIdle()
+            scenario.moveToState(Lifecycle.State.CREATED)
         }
     }
 
