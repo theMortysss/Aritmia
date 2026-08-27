@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import my.diplom.aritmia.ui.composable.TopBar
@@ -77,7 +78,8 @@ fun ClarifyScreen(
                                                         symptom, index, option
                                                     )
                                                 )
-                                            }
+                                            },
+                                            modifier = Modifier.testTag("clarify_option_$option")
                                         )
                                         Text(
                                             text = option.replaceFirstChar { it.uppercase() },
