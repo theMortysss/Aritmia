@@ -140,6 +140,7 @@ class AdminDoctorJourneyInstrumentedTest {
         val doctorPhone = uniquePhone(3)
         val patientPhone = uniquePhone(4)
         val patientName = "Пациент Врача"
+        val complaints = "нерегулярный пульс. сердце стучит. кружится голова"
         val doctor = createUser(
             phoneDigits = doctorPhone,
             fullName = "Врач Тест",
@@ -158,7 +159,7 @@ class AdminDoctorJourneyInstrumentedTest {
         val assessment = runBlocking {
             val sourceId = db.symptomDao().insert(
                 SymptomEntity(
-                    userInput = "нерегулярный пульс. сердце стучит. кружится голова",
+                    userInput = complaints,
                     medicalTerm = "Нерегулярный пульс, Ощущение сердцебиения, Головокружение",
                     probability = 0,
                     patientId = patient.id,
@@ -171,7 +172,7 @@ class AdminDoctorJourneyInstrumentedTest {
                 AssessmentEntity(
                     sourceSymptomId = sourceId,
                     patientId = patient.id,
-                    complaints = "нерегулярный пульс. сердце стучит. кружится голова",
+                    complaints = complaints,
                     status = "INSUFFICIENT_EVIDENCE",
                     recognizedConceptIds = AssessmentSnapshotCodec.encodeConceptIds(
                         setOf("irregular_rhythm", "palpitations", "dizziness")
@@ -193,18 +194,17 @@ class AdminDoctorJourneyInstrumentedTest {
             waitForText("Меню врача", "doctor workspace")
             waitForText(patientName, "doctor assessment queue")
 
-            // The instrumentation database is shared by the suite. Filter the queue first so
-            // the generic open button belongs to this test's patient, not another assessment.
             clickExactText("Фильтры")
             waitForText("Фильтры обращений", "doctor filters")
             replaceEditableField(1, patientName)
-            clickExactText("Применить")
+            composeRule.onNodeWithTag("doctor_filter_apply").performClick()
             waitForText(patientName, "filtered doctor assessment queue")
 
-            clickExactText("Открыть обращение")
+            composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}").performClick()
             waitForText("Обращение пациента", "assessment details")
             waitForText("История пациента", "patient assessment timeline")
             waitForText("Недостаточно данных", "frozen assessment status")
+            waitForText(complaints, "intended assessment complaints")
 
             replaceEditableField(
                 0,
@@ -226,7 +226,7 @@ class AdminDoctorJourneyInstrumentedTest {
 
             // Re-open from persisted state instead of depending on Flow/UI refresh timing.
             clickExactText("Закрыть")
-            clickExactText("Открыть обращение")
+            composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}").performClick()
             waitForText("Текущий статус: Просмотрено", "reopened saved doctor workflow")
 
             clickExactText("Закрыть")
