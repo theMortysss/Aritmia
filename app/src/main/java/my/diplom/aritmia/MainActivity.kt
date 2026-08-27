@@ -172,7 +172,6 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         val patient = db.userDao().getPatientById(userId) ?: return@launch
                                         val rules = db.ruleDao().getAllRules()
-
                                         val medTerms = symptoms.mapNotNull { s ->
                                             resolveSymptomTerm(s, rules, answers).medicalTerm
                                         }.joinToString(", ")
@@ -190,10 +189,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result") {
-                                            popUpTo("clarify") { inclusive = true }
-                                            launchSingleTop = true
-                                        }
+                                        navController.navigate("result")
                                     }
                                 },
                                 onLogout = onLogout
