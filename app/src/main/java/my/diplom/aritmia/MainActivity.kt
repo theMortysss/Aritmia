@@ -70,18 +70,14 @@ class MainActivity : ComponentActivity() {
                     }
                     savedDoctorId != null -> {
                         val doctor = db.userDao().getUserByIdAndRole(savedDoctorId, Role.DOCTOR)
-                        if (doctor != null && doctor.isActive) {
-                            "doctor"
-                        } else {
+                        if (doctor != null && doctor.isActive) "doctor" else {
                             clearPersistedSession()
                             "login"
                         }
                     }
                     savedAdminId != null -> {
                         val admin = db.userDao().getUserByIdAndRole(savedAdminId, Role.ADMIN)
-                        if (admin != null && admin.isActive) {
-                            "admin"
-                        } else {
+                        if (admin != null && admin.isActive) "admin" else {
                             clearPersistedSession()
                             "login"
                         }
@@ -130,11 +126,8 @@ class MainActivity : ComponentActivity() {
                         SymptomsScreen(
                             onDiagnose = { symptomList ->
                                 sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
-                                if (hasClarificationQuestions(symptomList, rules)) {
-                                    navController.navigate("clarify")
-                                } else {
-                                    navController.navigate("result")
-                                }
+                                if (hasClarificationQuestions(symptomList, rules)) navController.navigate("clarify")
+                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -151,11 +144,8 @@ class MainActivity : ComponentActivity() {
                                     symptomList,
                                     sharedViewModel.userId.value
                                 )
-                                if (hasClarificationQuestions(symptomList, rules)) {
-                                    navController.navigate("clarify")
-                                } else {
-                                    navController.navigate("result")
-                                }
+                                if (hasClarificationQuestions(symptomList, rules)) navController.navigate("clarify")
+                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -182,7 +172,6 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         val patient = db.userDao().getPatientById(userId) ?: return@launch
                                         val rules = db.ruleDao().getAllRules()
-
                                         val medTerms = symptoms.mapNotNull { s ->
                                             resolveSymptomTerm(s, rules, answers).medicalTerm
                                         }.joinToString(", ")
@@ -195,17 +184,12 @@ class MainActivity : ComponentActivity() {
                                                 patientId = patient.id,
                                                 clarifyingAnswers = answers.entries
                                                     .filter { it.value.any { a -> a.isNotBlank() } }
-                                                    .joinToString(";") {
-                                                        "${it.key}=${it.value.joinToString(",")}"
-                                                    },
+                                                    .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
                                                 nnProbability = null
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result") {
-                                            popUpTo("clarify") { inclusive = true }
-                                            launchSingleTop = true
-                                        }
+                                        navController.navigate("result")
                                     }
                                 },
                                 onLogout = onLogout
