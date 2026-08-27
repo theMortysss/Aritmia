@@ -32,6 +32,7 @@ class DoctorScreenViewModel @Inject constructor(
     val state: StateFlow<DoctorScreenState> = _state.asStateFlow()
 
     private var allAssessments: List<AssessmentEntity> = emptyList()
+    private var openedAssessmentId: Int? = null
 
     init {
         viewModelScope.launch {
@@ -128,7 +129,8 @@ class DoctorScreenViewModel @Inject constructor(
             }
 
             is DoctorScreenIntent.OpenAssessment -> openAssessment(intent.assessmentId)
-            is DoctorScreenIntent.CloseAssessment ->
+            is DoctorScreenIntent.CloseAssessment -> {
+                openedAssessmentId = null
                 _state.update {
                     it.copy(
                         selectedAssessment = null,
@@ -137,6 +139,7 @@ class DoctorScreenViewModel @Inject constructor(
                         doctorNoteDraft = ""
                     )
                 }
+            }
 
             is DoctorScreenIntent.UpdateDoctorNote ->
                 _state.update { it.copy(doctorNoteDraft = intent.note) }
@@ -207,21 +210,21 @@ class DoctorScreenViewModel @Inject constructor(
             .map { assessment -> buildItem(assessment, patients[assessment.patientId]) }
             .toList()
 
-        val selectedId = current.selectedAssessment?.assessment?.id
-        val selected = selectedId?.let { id ->
-            filtered.firstOrNull { it.assessment.id == id }
-                ?: allAssessments.firstOrNull { it.id == id }
-                    ?.let { buildItem(it, patients[it.patientId]) }
-        }
-        val timeline = selected?.assessment?.patientId?.let { patientId ->
-            allAssessments
-                .filter { it.patientId == patientId }
-                .sortedByDescending { it.createdAt }
-                .map { buildItem(it, patients[patientId]) }
-        }.orEmpty()
+        _state.update { latest ->
+            val selectedId = latest.selectedAssessment?.assessment?.id
+            val selected = selectedId?.let { id ->
+                filtered.firstOrNull { it.assessment.id == id }
+                    ?: allAssessments.firstOrNull { it.id == id }
+                        ?.let { buildItem(it, patients[it.patientId]) }
+            }
+            val timeline = selected?.assessment?.patientId?.let { patientId ->
+                allAssessments
+                    .filter { it.patientId == patientId }
+                    .sortedByDescending { it.createdAt }
+                    .map { buildItem(it, patients[patientId]) }
+            }.orEmpty()
 
-        _state.update {
-            it.copy(
+            latest.copy(
                 assessments = filtered,
                 totalCount = filtered.size,
                 selectedAssessment = selected,
@@ -243,10 +246,14 @@ class DoctorScreenViewModel @Inject constructor(
     }
 
     private fun openAssessment(assessmentId: Int) {
+        openedAssessmentId = assessmentId
         viewModelScope.launch {
             val row = allAssessments.firstOrNull { it.id == assessmentId }
                 ?: db.assessmentDao().getById(assessmentId)
-                ?: return@launch
+                ?: run {
+                    if (openedAssessmentId == assessmentId) openedAssessmentId = null
+                    return@launch
+                }
             val patient = db.userDao().getPatientById(row.patientId)
             val item = buildItem(row, patient)
             val timeline = db.assessmentDao().getByPatientId(row.patientId)
@@ -264,14 +271,16 @@ class DoctorScreenViewModel @Inject constructor(
 
     private fun saveAssessmentWorkflow(workflowStatus: String) {
         if (workflowStatus !in AssessmentWorkflow.values) return
-        val selected = _state.value.selectedAssessment ?: return
+        val assessmentId = openedAssessmentId
+            ?: _state.value.selectedAssessment?.assessment?.id
+            ?: return
         val note = _state.value.doctorNoteDraft.trim().takeIf { it.isNotBlank() }
         val needsAttention = workflowStatus == AssessmentWorkflow.NEW ||
             workflowStatus == AssessmentWorkflow.CONTACT_REQUIRED
 
         viewModelScope.launch {
             db.assessmentDao().updateWorkflow(
-                assessmentId = selected.assessment.id,
+                assessmentId = assessmentId,
                 workflowStatus = workflowStatus,
                 doctorNote = note,
                 needsDoctorAttention = needsAttention
