@@ -20,6 +20,7 @@ import my.diplom.aritmia.data.SymptomEntity
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.admin.AdminScreen
 import my.diplom.aritmia.ui.screen.clarify.ClarifyScreen
+import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.doctor.DoctorScreen
 import my.diplom.aritmia.ui.screen.login.LoginScreen
@@ -126,14 +127,11 @@ class MainActivity : ComponentActivity() {
                         SymptomsScreen(
                             onDiagnose = { symptomList ->
                                 sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
-                                val hasQuestions = symptomList.any { symptom ->
-                                    rules.any { rule ->
-                                        symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                            rule.clarifyingQuestions != null
-                                    }
+                                if (hasClarificationQuestions(symptomList, rules)) {
+                                    navController.navigate("clarify")
+                                } else {
+                                    navController.navigate("result")
                                 }
-                                if (hasQuestions) navController.navigate("clarify")
-                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -150,14 +148,11 @@ class MainActivity : ComponentActivity() {
                                     symptomList,
                                     sharedViewModel.userId.value
                                 )
-                                val hasQuestions = symptomList.any { symptom ->
-                                    rules.any { rule ->
-                                        symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                            rule.clarifyingQuestions != null
-                                    }
+                                if (hasClarificationQuestions(symptomList, rules)) {
+                                    navController.navigate("clarify")
+                                } else {
+                                    navController.navigate("result")
                                 }
-                                if (hasQuestions) navController.navigate("clarify")
-                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
