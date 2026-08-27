@@ -88,7 +88,7 @@ class MainActivity : ComponentActivity() {
 
             fun navigateToLoginAndClearGraph() {
                 navController.navigate("login") {
-                    popUpTo(navController.graph.id) { inclusive = true }
+                    popUpTo(navController.graph.id) { inclusive = false }
                     launchSingleTop = true
                 }
             }
