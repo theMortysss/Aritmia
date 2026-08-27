@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
                             sharedViewModel.clearData()
                             startNavigationSession("login")
                         }
+                        Unit
                     }
 
                     NavHost(
