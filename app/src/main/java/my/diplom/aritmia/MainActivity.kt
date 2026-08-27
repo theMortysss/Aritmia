@@ -219,7 +219,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack("symptoms", inclusive = false) },
                                 onContinue = {
                                     navController.navigate("symptoms-followup") {
-                                        popUpTo("result") { inclusive = true }
+                                        popUpTo("symptoms") { inclusive = false }
                                     }
                                 },
                                 navController = navController,
