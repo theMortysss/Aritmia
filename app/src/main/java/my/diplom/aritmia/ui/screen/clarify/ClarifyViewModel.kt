@@ -36,7 +36,9 @@ class ClarifyViewModel @Inject constructor(
                         userId = intent.userId,
                         answers = intent.initialAnswers.toMutableMap()
                             .mapValues { e -> e.value.toMutableList() },
-                        isLoading = true
+                        isLoading = true,
+                        navigateToFinish = false,
+                        logout = false
                     )
                 }
                 viewModelScope.launch {
@@ -56,6 +58,9 @@ class ClarifyViewModel @Inject constructor(
 
             is ClarifyScreenIntent.Finish ->
                 _state.update { it.copy(navigateToFinish = true) }
+
+            is ClarifyScreenIntent.FinishNavigationHandled ->
+                _state.update { it.copy(navigateToFinish = false) }
 
             is ClarifyScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }
