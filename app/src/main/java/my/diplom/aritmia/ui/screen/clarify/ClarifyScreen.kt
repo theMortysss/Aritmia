@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import my.diplom.aritmia.ui.composable.TopBar
@@ -52,6 +53,32 @@ fun ClarifyScreen(
                     .padding(padding)
                     .padding(16.dp)
             ) {
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            state.symptoms.forEach { symptom ->
+                                val prompts = clarificationPromptsFor(symptom, state.rules)
+                                val answers = state.answers[symptom].orEmpty()
+                                prompts.indices.forEach { index ->
+                                    if (answers.getOrNull(index).isNullOrBlank()) {
+                                        viewModel.onIntent(
+                                            ClarifyScreenIntent.UpdateAnswer(
+                                                symptom,
+                                                index,
+                                                "не могу ответить"
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Не могу ответить на оставшиеся вопросы")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 items(state.symptoms) { symptom ->
                     val prompts = clarificationPromptsFor(symptom, state.rules)
                     val symptomAnswers = state.answers[symptom] ?: mutableListOf()
@@ -77,7 +104,8 @@ fun ClarifyScreen(
                                                         symptom, index, option
                                                     )
                                                 )
-                                            }
+                                            },
+                                            modifier = Modifier.testTag("clarify_option_$option")
                                         )
                                         Text(
                                             text = option.replaceFirstChar { it.uppercase() },
