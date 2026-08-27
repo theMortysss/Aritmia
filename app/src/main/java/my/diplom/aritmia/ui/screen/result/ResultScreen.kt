@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import my.diplom.aritmia.diagnosis.ComplaintTriageLevel
 import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseCandidate
 import my.diplom.aritmia.ui.composable.TopBar
@@ -85,6 +86,8 @@ fun ResultScreen(
                     onEditSymptom = { viewModel.onIntent(ResultScreenIntent.EditSymptom(it)) }
                 )
 
+                ComplaintTriageCard(state.triageAssessment)
+
                 DiseaseAssessmentCard(
                     status = state.diseaseAssessmentStatus,
                     recognizedConceptCount = state.recognizedDiseaseConceptCount,
@@ -93,7 +96,10 @@ fun ResultScreen(
 
                 SafetyCard(state.diseaseAssessmentStatus)
 
-                if (state.diseaseAssessmentStatus == DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE) {
+                if (
+                    state.diseaseAssessmentStatus == DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE &&
+                    state.triageAssessment.level != ComplaintTriageLevel.EMERGENCY
+                ) {
                     Button(
                         onClick = onContinue,
                         modifier = Modifier.fillMaxWidth()
@@ -240,7 +246,7 @@ private fun DiseaseAssessmentCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Во введённых жалобах не распознаны признаки, на которых обучена сердечно-сосудистая модель. Поэтому приложение не будет искусственно распределять проценты между заболеваниями."
+                        "Во введённых жалобах не распознаны известные приложению признаки. Поэтому приложение не будет искусственно распределять проценты между заболеваниями."
                     )
                     Text(
                         "Если жалоба сохраняется или беспокоит вас, обратитесь к подходящему специалисту для очной оценки.",
@@ -255,10 +261,10 @@ private fun DiseaseAssessmentCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Распознано сердечно-сосудистых признаков: $recognizedConceptCount. Этого объёма информации недостаточно для устойчивого top-5 ранжирования, поэтому приложение не распределяет уверенность модели между заболеваниями."
+                        "Распознано признаков, входящих в текущую модель: $recognizedConceptCount. Этого объёма информации недостаточно для устойчивого top-5 ранжирования, поэтому приложение не распределяет уверенность модели между заболеваниями."
                     )
                     Text(
-                        "Можно продолжить это же обращение: уже введённые жалобы сохранятся, а вы добавите только другие реально присутствующие симптомы.",
+                        "Это ограничение модели, а не оценка срочности. Отдельные опасные признаки обрабатываются независимо и показываются выше.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

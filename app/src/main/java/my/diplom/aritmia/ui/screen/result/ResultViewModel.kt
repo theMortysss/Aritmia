@@ -16,9 +16,11 @@ import my.diplom.aritmia.data.AssessmentSnapshotCodec
 import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.AssessmentAttentionPolicy
 import my.diplom.aritmia.diagnosis.ComplaintOntology
+import my.diplom.aritmia.diagnosis.ComplaintTriage
+import my.diplom.aritmia.diagnosis.ComplaintTriageAssessment
 import my.diplom.aritmia.diagnosis.DiseaseAssessment
-import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
 import my.diplom.aritmia.ui.screen.SharedViewModel
@@ -88,11 +90,16 @@ class ResultViewModel @Inject constructor(
                     classifySymptoms(diagnosis.userInput, diagnosis.medicalTerm, rules)
 
                 val userComplaints = diagnosis.userInput.split(". ").filter { it.isNotBlank() }
+                val storedAnswers = parseAnswers(diagnosis.clarifyingAnswers)
+                val triage = ComplaintTriage.assess(
+                    complaints = userComplaints,
+                    clarificationAnswers = triageAnswersFor(userComplaints, rules, storedAnswers)
+                )
                 val assessment = diseaseNetworkRepository.assess(
                     complaints = userComplaints,
                     limit = 5
                 )
-                persistAssessment(diagnosis, assessment)
+                persistAssessment(diagnosis, assessment, triage)
 
                 _state.update {
                     it.copy(
@@ -101,6 +108,7 @@ class ResultViewModel @Inject constructor(
                         recognizedSymptoms = recognized,
                         unrecognizedSymptoms = unrecognized,
                         recognizedMedicalTerms = recTerms,
+                        triageAssessment = triage,
                         diseaseAssessmentStatus = assessment.status,
                         recognizedDiseaseConceptCount = assessment.recognizedConceptIds.size,
                         diseaseCandidates = assessment.candidates,
@@ -151,17 +159,22 @@ class ResultViewModel @Inject constructor(
             } else {
                 val (recognized, unrecognized, recTerms) =
                     classifySymptoms(updatedDiagnosis.userInput, updatedDiagnosis.medicalTerm, rules)
+                val triage = ComplaintTriage.assess(
+                    complaints = updatedSymptoms,
+                    clarificationAnswers = triageAnswersFor(updatedSymptoms, rules, answers)
+                )
                 val assessment = diseaseNetworkRepository.assess(
                     complaints = updatedSymptoms,
                     limit = 5
                 )
-                persistAssessment(updatedDiagnosis, assessment)
+                persistAssessment(updatedDiagnosis, assessment, triage)
                 _state.update {
                     it.copy(
                         diagnosis = updatedDiagnosis,
                         recognizedSymptoms = recognized,
                         unrecognizedSymptoms = unrecognized,
                         recognizedMedicalTerms = recTerms,
+                        triageAssessment = triage,
                         diseaseAssessmentStatus = assessment.status,
                         recognizedDiseaseConceptCount = assessment.recognizedConceptIds.size,
                         diseaseCandidates = assessment.candidates,
@@ -174,11 +187,16 @@ class ResultViewModel @Inject constructor(
 
     private suspend fun persistAssessment(
         diagnosis: SymptomEntity,
-        assessment: DiseaseAssessment
+        assessment: DiseaseAssessment,
+        triage: ComplaintTriageAssessment
     ) {
         val existing = db.assessmentDao().getBySourceSymptomId(diagnosis.id)
-        val defaultNeedsAttention = assessment.status != DiseaseAssessmentStatus.RANKED
-        val preserveDoctorWorkflow = existing != null && existing.workflowStatus != AssessmentWorkflow.NEW
+        val needsDoctorAttention = AssessmentAttentionPolicy.needsDoctorAttention(
+            existingWorkflowStatus = existing?.workflowStatus,
+            existingNeedsDoctorAttention = existing?.needsDoctorAttention,
+            assessmentStatus = assessment.status,
+            triageLevel = triage.level
+        )
 
         val snapshot = AssessmentEntity(
             id = existing?.id ?: 0,
@@ -192,11 +210,7 @@ class ResultViewModel @Inject constructor(
             extractorVersion = DiseaseNetworkRepository.EXTRACTOR_VERSION,
             createdAt = existing?.createdAt ?: diagnosis.createdAt,
             workflowStatus = existing?.workflowStatus ?: AssessmentWorkflow.NEW,
-            needsDoctorAttention = if (preserveDoctorWorkflow) {
-                existing?.needsDoctorAttention ?: defaultNeedsAttention
-            } else {
-                defaultNeedsAttention
-            },
+            needsDoctorAttention = needsDoctorAttention,
             doctorNote = existing?.doctorNote
         )
 

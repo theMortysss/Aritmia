@@ -19,7 +19,7 @@ class ComplaintClarificationTest {
     }
 
     @Test
-    fun adminRuleQuestionsOverrideOntologyQuestions() {
+    fun adminRuleQuestionsStayFirstButCannotSuppressConceptSafetyQuestions() {
         val rule = RuleEntity(
             id = 7,
             symptomKey = "низкое давление",
@@ -31,8 +31,11 @@ class ComplaintClarificationTest {
 
         val prompts = clarificationPromptsFor("низкое давление", listOf(rule))
 
-        assertEquals(1, prompts.size)
-        assertEquals("Пользовательский вопрос?", prompts.single().text)
-        assertTrue(prompts.single().options.containsAll(listOf("да", "нет", "не могу ответить")))
+        assertTrue(prompts.size >= 3)
+        assertEquals("rule:7:0", prompts.first().id)
+        assertEquals("Пользовательский вопрос?", prompts.first().text)
+        assertTrue(prompts.first().options.containsAll(listOf("да", "нет", "не могу ответить")))
+        assertTrue(prompts.any { it.id == "concept:low_bp:measured_bp" })
+        assertTrue(prompts.any { it.id == "concept:low_bp:symptomatic" })
     }
 }
