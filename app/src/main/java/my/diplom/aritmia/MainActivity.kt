@@ -196,9 +196,9 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result") {
-                                            popUpTo("clarify") { inclusive = true }
-                                        }
+                                        navController.popBackStack()
+                                        kotlinx.coroutines.yield()
+                                        navController.navigate("result")
                                     }
                                 },
                                 onLogout = onLogout
