@@ -99,8 +99,17 @@ class MainActivity : ComponentActivity() {
 
                     val onLogout = {
                         clearPersistedSession()
-                        sharedViewModel.clearData()
-                        startNavigationSession("login")
+                        scope.launch {
+                            if (root == "symptoms") {
+                                // Drain every patient-only destination while this Activity is still
+                                // RESUMED. This prevents stale NavBackStackEntry lifecycle observers
+                                // from being destroyed later from INITIALIZED state on API 35.
+                                navController.popBackStack("symptoms", inclusive = false)
+                                withFrameNanos { }
+                            }
+                            sharedViewModel.clearData()
+                            startNavigationSession("login")
+                        }
                     }
 
                     NavHost(
@@ -204,7 +213,9 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             )
                                             sharedViewModel.updateAnswers(answers)
-                                            navController.navigate("result")
+                                            navController.navigate("result") {
+                                                popUpTo("clarify") { inclusive = true }
+                                            }
                                         }
                                     },
                                     onLogout = onLogout
@@ -225,7 +236,11 @@ class MainActivity : ComponentActivity() {
                                     userId = userId,
                                     onLogout = onLogout,
                                     onBack = { navController.popBackStack("symptoms", inclusive = false) },
-                                    onContinue = { navController.navigate("symptoms-followup") },
+                                    onContinue = {
+                                        navController.navigate("symptoms-followup") {
+                                            popUpTo("result") { inclusive = true }
+                                        }
+                                    },
                                     navController = navController,
                                     sharedViewModel = sharedViewModel
                                 )
