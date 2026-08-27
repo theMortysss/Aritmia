@@ -142,7 +142,7 @@ class DoctorScreenViewModel @Inject constructor(
                 _state.update { it.copy(doctorNoteDraft = intent.note) }
 
             is DoctorScreenIntent.SaveAssessmentWorkflow ->
-                saveAssessmentWorkflow(intent.workflowStatus)
+                saveAssessmentWorkflow(intent.assessmentId, intent.workflowStatus)
 
             is DoctorScreenIntent.ShowRuleEditor ->
                 _state.update { it.copy(showRuleEditor = true) }
@@ -207,10 +207,6 @@ class DoctorScreenViewModel @Inject constructor(
             .map { assessment -> buildItem(assessment, patients[assessment.patientId]) }
             .toList()
 
-        // Rendering can suspend while querying patients. During that suspension the doctor may
-        // open an assessment. Derive dialog selection from the latest state inside the atomic
-        // update so a stale render cannot clear a newly opened assessment before a workflow
-        // action is saved.
         _state.update { latest ->
             val selectedId = latest.selectedAssessment?.assessment?.id
             val selected = selectedId?.let { id ->
@@ -266,16 +262,16 @@ class DoctorScreenViewModel @Inject constructor(
         }
     }
 
-    private fun saveAssessmentWorkflow(workflowStatus: String) {
+    private fun saveAssessmentWorkflow(assessmentId: Int, workflowStatus: String) {
         if (workflowStatus !in AssessmentWorkflow.values) return
-        val selected = _state.value.selectedAssessment ?: return
+        if (assessmentId <= 0) return
         val note = _state.value.doctorNoteDraft.trim().takeIf { it.isNotBlank() }
         val needsAttention = workflowStatus == AssessmentWorkflow.NEW ||
             workflowStatus == AssessmentWorkflow.CONTACT_REQUIRED
 
         viewModelScope.launch {
             db.assessmentDao().updateWorkflow(
-                assessmentId = selected.assessment.id,
+                assessmentId = assessmentId,
                 workflowStatus = workflowStatus,
                 doctorNote = note,
                 needsDoctorAttention = needsAttention
