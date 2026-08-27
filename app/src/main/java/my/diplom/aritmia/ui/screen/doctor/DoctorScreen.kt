@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -18,16 +17,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import my.diplom.aritmia.data.AssessmentWorkflow
-import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.ui.composable.TopBar
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorAssessmentItem
 import my.diplom.aritmia.ui.screen.doctor.model.DoctorScreenIntent
@@ -71,29 +67,11 @@ fun DoctorScreen(
                     onClick = { focusManager.clearFocus() }
                 )
         ) {
-            TabRow(selectedTabIndex = state.selectedTabIndex) {
-                listOf("Обращения", "Правила").forEachIndexed { index, title ->
-                    Tab(
-                        selected = state.selectedTabIndex == index,
-                        onClick = { viewModel.onIntent(DoctorScreenIntent.ChangeTab(index)) },
-                        text = { Text(title) }
-                    )
-                }
-            }
-
-            when (state.selectedTabIndex) {
-                0 -> AssessmentQueue(
-                    state = state,
-                    dateFormatter = dateFormatter,
-                    onIntent = viewModel::onIntent
-                )
-                1 -> RulesWorkspace(
-                    rules = state.rules,
-                    showRuleEditor = state.showRuleEditor,
-                    selectedRule = state.selectedRule,
-                    onIntent = viewModel::onIntent
-                )
-            }
+            AssessmentQueue(
+                state = state,
+                dateFormatter = dateFormatter,
+                onIntent = viewModel::onIntent
+            )
         }
 
         if (state.showFilterSheet) {
@@ -373,62 +351,6 @@ private fun AssessmentDetailsDialog(
     )
 }
 
-@Composable
-private fun RulesWorkspace(
-    rules: List<RuleEntity>,
-    showRuleEditor: Boolean,
-    selectedRule: RuleEntity?,
-    onIntent: (DoctorScreenIntent) -> Unit
-) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Button(onClick = {
-            onIntent(DoctorScreenIntent.SelectRule(null))
-            onIntent(DoctorScreenIntent.ShowRuleEditor)
-        }) { Text("Добавить правило") }
-
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Правила управляют подсказками, уточняющими вопросами и medical terms. Они не изменяют веса pretrained disease-модели.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(12.dp))
-
-        LazyColumn {
-            items(rules, key = { it.id }) { rule ->
-                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Ключ: ${rule.symptomKey}", fontWeight = FontWeight.Bold)
-                        Text("Термин: ${rule.medicalTerm}")
-                        Text("Вопросы: ${rule.clarifyingQuestions ?: "Нет"}")
-                        Text("Триггеры: ${rule.answerTriggers ?: "Нет"}")
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Button(onClick = {
-                                onIntent(DoctorScreenIntent.SelectRule(rule))
-                                onIntent(DoctorScreenIntent.ShowRuleEditor)
-                            }) { Text("Редактировать") }
-                            TextButton(onClick = { onIntent(DoctorScreenIntent.DeleteRule(rule)) }) {
-                                Text("Удалить")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showRuleEditor) {
-        RuleEditorDialog(
-            rule = selectedRule,
-            onSave = {
-                onIntent(DoctorScreenIntent.SaveRule(it))
-                onIntent(DoctorScreenIntent.HideRuleEditor)
-            },
-            onDismiss = { onIntent(DoctorScreenIntent.HideRuleEditor) }
-        )
-    }
-}
-
 @RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -563,86 +485,6 @@ private fun AssessmentDatePicker(
     ) {
         DatePicker(state = state, modifier = Modifier.padding(16.dp))
     }
-}
-
-@Composable
-fun RuleEditorDialog(
-    rule: RuleEntity?,
-    onSave: (RuleEntity) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var symptomKey by remember(rule?.id) { mutableStateOf(rule?.symptomKey.orEmpty()) }
-    var medicalTerm by remember(rule?.id) { mutableStateOf(rule?.medicalTerm.orEmpty()) }
-    var clarifyingQ by remember(rule?.id) { mutableStateOf(rule?.clarifyingQuestions.orEmpty()) }
-    var answerTriggers by remember(rule?.id) { mutableStateOf(rule?.answerTriggers.orEmpty()) }
-    val focusManager = LocalFocusManager.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (rule == null) "Добавить правило" else "Редактировать правило") },
-        text = {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = symptomKey,
-                    onValueChange = { symptomKey = it },
-                    label = { Text("Ключевая фраза") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-                )
-                OutlinedTextField(
-                    value = medicalTerm,
-                    onValueChange = { medicalTerm = it },
-                    label = { Text("Медицинский термин") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-                )
-                OutlinedTextField(
-                    value = clarifyingQ,
-                    onValueChange = { clarifyingQ = it },
-                    label = { Text("Уточняющие вопросы (через ;)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-                )
-                OutlinedTextField(
-                    value = answerTriggers,
-                    onValueChange = { answerTriggers = it },
-                    label = { Text("Триггеры (ответ=термин;...)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
-                )
-                Text(
-                    "Legacy-вес правила скрыт: он не влияет на текущий disease ranking и не редактируется врачом или администратором.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = symptomKey.isNotBlank() && medicalTerm.isNotBlank(),
-                onClick = {
-                    onSave(
-                        RuleEntity(
-                            id = rule?.id ?: 0,
-                            symptomKey = symptomKey.trim(),
-                            medicalTerm = medicalTerm.trim(),
-                            probabilityWeight = rule?.probabilityWeight ?: 0,
-                            clarifyingQuestions = clarifyingQ.trim().takeIf { it.isNotBlank() },
-                            answerTriggers = answerTriggers.trim().takeIf { it.isNotBlank() }
-                        )
-                    )
-                }
-            ) { Text("Сохранить") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
-    )
 }
 
 private fun assessmentStatusLabel(status: String): String = when (status) {
