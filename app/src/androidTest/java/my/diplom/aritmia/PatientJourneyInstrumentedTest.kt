@@ -92,7 +92,7 @@ class PatientJourneyInstrumentedTest {
                 firstAssessmentTitle
             )
             waitForTextContaining(
-                "Распознано сердечно-сосудистых признаков: 3.",
+                "Распознано признаков, входящих в текущую модель: 3.",
                 stage = "three-concept evidence count"
             )
 
