@@ -1,0 +1,111 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 11,
+    "identityHash": "8a22bc6f3898e4218aaba306af26d89a",
+    "entities": [
+      {
+        "tableName": "User",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phone` TEXT NOT NULL, `fullName` TEXT NOT NULL, `password` TEXT NOT NULL, `role` TEXT NOT NULL, `gender` TEXT, `age` INTEGER, `specialty` TEXT, `isActive` INTEGER NOT NULL)",
+        "fields": [
+          {"fieldPath":"id","columnName":"id","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"phone","columnName":"phone","affinity":"TEXT","notNull":true},
+          {"fieldPath":"fullName","columnName":"fullName","affinity":"TEXT","notNull":true},
+          {"fieldPath":"password","columnName":"password","affinity":"TEXT","notNull":true},
+          {"fieldPath":"role","columnName":"role","affinity":"TEXT","notNull":true},
+          {"fieldPath":"gender","columnName":"gender","affinity":"TEXT","notNull":false},
+          {"fieldPath":"age","columnName":"age","affinity":"INTEGER","notNull":false},
+          {"fieldPath":"specialty","columnName":"specialty","affinity":"TEXT","notNull":false},
+          {"fieldPath":"isActive","columnName":"isActive","affinity":"INTEGER","notNull":true}
+        ],
+        "primaryKey":{"autoGenerate":true,"columnNames":["id"]},
+        "indices":[],
+        "foreignKeys":[]
+      },
+      {
+        "tableName":"SymptomEntity",
+        "createSql":"CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userInput` TEXT NOT NULL, `medicalTerm` TEXT, `probability` INTEGER NOT NULL, `patientId` INTEGER NOT NULL, `clarifyingAnswers` TEXT, `createdAt` TEXT NOT NULL, `calledByDoctor` INTEGER NOT NULL, `nnProbability` INTEGER, FOREIGN KEY(`patientId`) REFERENCES `User`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields":[
+          {"fieldPath":"id","columnName":"id","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"userInput","columnName":"userInput","affinity":"TEXT","notNull":true},
+          {"fieldPath":"medicalTerm","columnName":"medicalTerm","affinity":"TEXT","notNull":false},
+          {"fieldPath":"probability","columnName":"probability","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"patientId","columnName":"patientId","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"clarifyingAnswers","columnName":"clarifyingAnswers","affinity":"TEXT","notNull":false},
+          {"fieldPath":"createdAt","columnName":"createdAt","affinity":"TEXT","notNull":true},
+          {"fieldPath":"calledByDoctor","columnName":"calledByDoctor","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"nnProbability","columnName":"nnProbability","affinity":"INTEGER","notNull":false}
+        ],
+        "primaryKey":{"autoGenerate":true,"columnNames":["id"]},
+        "indices":[{"name":"index_SymptomEntity_patientId","unique":false,"columnNames":["patientId"],"orders":[],"createSql":"CREATE INDEX IF NOT EXISTS `index_SymptomEntity_patientId` ON `${TABLE_NAME}` (`patientId`)"}],
+        "foreignKeys":[{"table":"User","onDelete":"CASCADE","onUpdate":"NO ACTION","columns":["patientId"],"referencedColumns":["id"]}]
+      },
+      {
+        "tableName":"AssessmentEntity",
+        "createSql":"CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sourceSymptomId` INTEGER NOT NULL, `patientId` INTEGER NOT NULL, `complaints` TEXT NOT NULL, `status` TEXT NOT NULL, `recognizedConceptIds` TEXT NOT NULL, `modelCandidates` TEXT, `modelVersion` TEXT NOT NULL, `extractorVersion` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `workflowStatus` TEXT NOT NULL, `needsDoctorAttention` INTEGER NOT NULL, `doctorNote` TEXT, `triageLevel` TEXT NOT NULL DEFAULT 'NONE', `triageFlags` TEXT, FOREIGN KEY(`patientId`) REFERENCES `User`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`sourceSymptomId`) REFERENCES `SymptomEntity`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields":[
+          {"fieldPath":"id","columnName":"id","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"sourceSymptomId","columnName":"sourceSymptomId","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"patientId","columnName":"patientId","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"complaints","columnName":"complaints","affinity":"TEXT","notNull":true},
+          {"fieldPath":"status","columnName":"status","affinity":"TEXT","notNull":true},
+          {"fieldPath":"recognizedConceptIds","columnName":"recognizedConceptIds","affinity":"TEXT","notNull":true},
+          {"fieldPath":"modelCandidates","columnName":"modelCandidates","affinity":"TEXT","notNull":false},
+          {"fieldPath":"modelVersion","columnName":"modelVersion","affinity":"TEXT","notNull":true},
+          {"fieldPath":"extractorVersion","columnName":"extractorVersion","affinity":"TEXT","notNull":true},
+          {"fieldPath":"createdAt","columnName":"createdAt","affinity":"TEXT","notNull":true},
+          {"fieldPath":"workflowStatus","columnName":"workflowStatus","affinity":"TEXT","notNull":true},
+          {"fieldPath":"needsDoctorAttention","columnName":"needsDoctorAttention","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"doctorNote","columnName":"doctorNote","affinity":"TEXT","notNull":false},
+          {"fieldPath":"triageLevel","columnName":"triageLevel","affinity":"TEXT","notNull":true,"defaultValue":"'NONE'"},
+          {"fieldPath":"triageFlags","columnName":"triageFlags","affinity":"TEXT","notNull":false}
+        ],
+        "primaryKey":{"autoGenerate":true,"columnNames":["id"]},
+        "indices":[
+          {"name":"index_AssessmentEntity_patientId","unique":false,"columnNames":["patientId"],"orders":[],"createSql":"CREATE INDEX IF NOT EXISTS `index_AssessmentEntity_patientId` ON `${TABLE_NAME}` (`patientId`)"},
+          {"name":"index_AssessmentEntity_sourceSymptomId","unique":true,"columnNames":["sourceSymptomId"],"orders":[],"createSql":"CREATE UNIQUE INDEX IF NOT EXISTS `index_AssessmentEntity_sourceSymptomId` ON `${TABLE_NAME}` (`sourceSymptomId`)"}
+        ],
+        "foreignKeys":[
+          {"table":"User","onDelete":"CASCADE","onUpdate":"NO ACTION","columns":["patientId"],"referencedColumns":["id"]},
+          {"table":"SymptomEntity","onDelete":"CASCADE","onUpdate":"NO ACTION","columns":["sourceSymptomId"],"referencedColumns":["id"]}
+        ]
+      },
+      {
+        "tableName":"AuditEventEntity",
+        "createSql":"CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `adminId` INTEGER, `action` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` TEXT, `details` TEXT, `createdAt` TEXT NOT NULL)",
+        "fields":[
+          {"fieldPath":"id","columnName":"id","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"adminId","columnName":"adminId","affinity":"INTEGER","notNull":false},
+          {"fieldPath":"action","columnName":"action","affinity":"TEXT","notNull":true},
+          {"fieldPath":"entityType","columnName":"entityType","affinity":"TEXT","notNull":true},
+          {"fieldPath":"entityId","columnName":"entityId","affinity":"TEXT","notNull":false},
+          {"fieldPath":"details","columnName":"details","affinity":"TEXT","notNull":false},
+          {"fieldPath":"createdAt","columnName":"createdAt","affinity":"TEXT","notNull":true}
+        ],
+        "primaryKey":{"autoGenerate":true,"columnNames":["id"]},
+        "indices":[],
+        "foreignKeys":[]
+      },
+      {
+        "tableName":"RuleEntity",
+        "createSql":"CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `symptomKey` TEXT NOT NULL, `medicalTerm` TEXT NOT NULL, `probabilityWeight` INTEGER NOT NULL, `clarifyingQuestions` TEXT, `answerTriggers` TEXT)",
+        "fields":[
+          {"fieldPath":"id","columnName":"id","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"symptomKey","columnName":"symptomKey","affinity":"TEXT","notNull":true},
+          {"fieldPath":"medicalTerm","columnName":"medicalTerm","affinity":"TEXT","notNull":true},
+          {"fieldPath":"probabilityWeight","columnName":"probabilityWeight","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"clarifyingQuestions","columnName":"clarifyingQuestions","affinity":"TEXT","notNull":false},
+          {"fieldPath":"answerTriggers","columnName":"answerTriggers","affinity":"TEXT","notNull":false}
+        ],
+        "primaryKey":{"autoGenerate":true,"columnNames":["id"]},
+        "indices":[],
+        "foreignKeys":[]
+      }
+    ],
+    "views":[],
+    "setupQueries":[
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8a22bc6f3898e4218aaba306af26d89a')"
+    ]
+  }
+}
