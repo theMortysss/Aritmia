@@ -206,7 +206,11 @@ class AdminDoctorJourneyInstrumentedTest {
             waitForText("История пациента", "patient assessment timeline")
             waitForText("Недостаточно данных", "frozen assessment status")
 
-            replaceEditableField(0, "Пациенту рекомендована очная консультация")
+            replaceEditableField(
+                0,
+                "Пациенту рекомендована очная консультация",
+                scrollTo = true
+            )
             composeRule.onNodeWithTag("doctor_workflow_REVIEWED")
                 .performScrollTo()
                 .performClick()
@@ -289,10 +293,14 @@ class AdminDoctorJourneyInstrumentedTest {
         node.performClick()
     }
 
-    private fun replaceEditableField(index: Int, value: String) {
-        composeRule.onAllNodes(hasSetTextAction())[index]
-            .performScrollTo()
-            .performTextReplacement(value)
+    private fun replaceEditableField(
+        index: Int,
+        value: String,
+        scrollTo: Boolean = false
+    ) {
+        val node = composeRule.onAllNodes(hasSetTextAction())[index]
+        if (scrollTo) node.performScrollTo()
+        node.performTextReplacement(value)
     }
 
     private fun waitForText(
