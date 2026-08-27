@@ -14,7 +14,7 @@ activityCompose = "1.9.3"
 composeBom = "2025.01.00"
 ksp = "2.0.0-1.0.21"
 materialIconsExtended = "1.7.7"
-navigationCompose = "2.9.8"
+navigationCompose = "2.8.4"
 kotlinxSerializationJson = "1.6.3"
 appcompat = "1.7.0"
 runtimeLivedata = "1.7.5"
@@ -36,7 +36,7 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "roomRuntime" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "roomRuntime" }
 androidx-ui-viewbinding = { module = "androidx.compose.ui:ui-viewbinding" }
-dagger-compiler = { module = "com.google.dagger:dagger-compiler", version.ref = "hiltAndroid" }
+dagger-compiler = { module = "com.google.dagger:dagger-compiler", name = "dagger-compiler", version.ref = "hiltAndroid" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
 hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hiltAndroid" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
