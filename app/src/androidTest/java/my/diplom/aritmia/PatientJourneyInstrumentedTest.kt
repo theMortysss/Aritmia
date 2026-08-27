@@ -149,6 +149,9 @@ class PatientJourneyInstrumentedTest {
             stage = "expanded clarification screen",
             timeoutMillis = 20_000
         )
+        composeRule.waitForIdle()
+        SystemClock.sleep(250)
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Не могу ответить — продолжить")
             .performScrollTo()
             .performClick()
