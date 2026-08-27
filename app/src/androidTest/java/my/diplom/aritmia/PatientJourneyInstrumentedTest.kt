@@ -122,7 +122,15 @@ class PatientJourneyInstrumentedTest {
                 .performClick()
             waitForText(
                 "Симптомы пока не добавлены",
-                stage = "stable symptoms screen before scenario teardown"
+                stage = "stable symptoms screen before logout"
+            )
+
+            composeRule.onNodeWithText("Выйти").performClick()
+            waitForText("Вы уверены, что хотите выйти?", stage = "logout confirmation")
+            composeRule.onNodeWithText("Да").performClick()
+            waitForText(
+                "Вход в приложение",
+                stage = "clean login stack before scenario teardown"
             )
             composeRule.waitForIdle()
         }
