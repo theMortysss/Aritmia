@@ -38,10 +38,7 @@ sealed class DoctorScreenIntent {
     data class OpenAssessment(val assessmentId: Int) : DoctorScreenIntent()
     object CloseAssessment : DoctorScreenIntent()
     data class UpdateDoctorNote(val note: String) : DoctorScreenIntent()
-    data class SaveAssessmentWorkflow(
-        val assessmentId: Int,
-        val workflowStatus: String
-    ) : DoctorScreenIntent()
+    data class SaveAssessmentWorkflow(val workflowStatus: String) : DoctorScreenIntent()
 
     object ShowRuleEditor : DoctorScreenIntent()
     object HideRuleEditor : DoctorScreenIntent()
