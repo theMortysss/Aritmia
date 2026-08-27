@@ -95,8 +95,8 @@ class MainActivity : ComponentActivity() {
 
             val onLogout = {
                 clearPersistedSession()
-                sharedViewModel.clearData()
                 navigateToLoginAndClearGraph()
+                sharedViewModel.clearData()
             }
 
             validatedStartDestination?.let { startDestination ->
