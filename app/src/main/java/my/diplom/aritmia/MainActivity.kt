@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -101,7 +103,14 @@ class MainActivity : ComponentActivity() {
                         startNavigationSession("login")
                     }
 
-                    NavHost(navController = navController, startDestination = root) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = root,
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None }
+                    ) {
                         composable("login") {
                             LoginScreen(
                                 onLoginSuccess = { user ->
