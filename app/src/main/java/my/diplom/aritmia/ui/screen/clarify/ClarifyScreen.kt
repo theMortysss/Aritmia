@@ -71,10 +71,11 @@ fun ClarifyScreen(
                                     }
                                 }
                             }
+                            viewModel.onIntent(ClarifyScreenIntent.Finish)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Не могу ответить на оставшиеся вопросы")
+                        Text("Не могу ответить — продолжить")
                     }
                     Spacer(Modifier.height(8.dp))
                 }
