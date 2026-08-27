@@ -125,8 +125,6 @@ class PatientJourneyInstrumentedTest {
                 stage = "stable symptoms screen before scenario teardown"
             )
             composeRule.waitForIdle()
-            SystemClock.sleep(1_500)
-            composeRule.waitForIdle()
         }
     }
 
