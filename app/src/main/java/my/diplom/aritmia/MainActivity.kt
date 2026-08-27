@@ -196,9 +196,9 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.popBackStack()
-                                        kotlinx.coroutines.yield()
-                                        navController.navigate("result")
+                                        navController.navigate("result") {
+                                            popUpTo("clarify") { inclusive = true }
+                                        }
                                     }
                                 },
                                 onLogout = onLogout
@@ -217,7 +217,11 @@ class MainActivity : ComponentActivity() {
                                 userId = userId,
                                 onLogout = onLogout,
                                 onBack = { navController.popBackStack("symptoms", inclusive = false) },
-                                onContinue = { navController.navigate("symptoms-followup") },
+                                onContinue = {
+                                    navController.navigate("symptoms-followup") {
+                                        popUpTo("result") { inclusive = true }
+                                    }
+                                },
                                 navController = navController,
                                 sharedViewModel = sharedViewModel
                             )
