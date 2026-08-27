@@ -98,9 +98,16 @@ class PatientJourneyInstrumentedTest {
             addComplaint(fourthComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             completeClarificationsWithoutGuessing()
-            waitForText(
+
+            val secondAssessmentTitle = waitForAssessmentTitle(
+                stage = "four-concept assessment",
+                timeoutMillis = 30_000
+            )
+            assertEquals(
+                "Four recognized model concepts must produce ranked output. " +
+                    "Actual result title='$secondAssessmentTitle'",
                 "Возможные сердечно-сосудистые состояния",
-                stage = "four-concept ranked result"
+                secondAssessmentTitle
             )
             waitForTextContaining(
                 "Фибрилляция / трепетание предсердий",
@@ -173,6 +180,37 @@ class PatientJourneyInstrumentedTest {
         composeRule.onAllNodes(hasSetTextAction())[index]
             .performScrollTo()
             .performTextReplacement(value)
+    }
+
+    private fun waitForAssessmentTitle(
+        stage: String,
+        timeoutMillis: Long
+    ): String {
+        val titles = listOf(
+            "Недостаточно данных для сердечно-сосудистой оценки",
+            "Недостаточно признаков для ранжирования заболеваний",
+            "Модель оценки временно недоступна",
+            "Возможные сердечно-сосудистые состояния"
+        )
+        try {
+            composeRule.waitUntil(timeoutMillis) {
+                titles.any { title ->
+                    composeRule.onAllNodesWithText(title, substring = false)
+                        .fetchSemanticsNodes()
+                        .isNotEmpty()
+                }
+            }
+        } catch (error: Throwable) {
+            throw AssertionError(
+                "Timed out during $stage waiting for any final assessment state: $titles",
+                error
+            )
+        }
+        return titles.first { title ->
+            composeRule.onAllNodesWithText(title, substring = false)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
     }
 
     private fun waitForText(
