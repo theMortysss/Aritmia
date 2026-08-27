@@ -3,6 +3,7 @@ package my.diplom.aritmia.ui.screen.doctor.model
 import androidx.compose.runtime.Immutable
 import my.diplom.aritmia.data.AssessmentEntity
 import my.diplom.aritmia.data.StoredDiseaseCandidate
+import my.diplom.aritmia.data.StoredTriageFlag
 import my.diplom.aritmia.data.SymptomEntity
 import my.diplom.aritmia.data.User
 import java.time.LocalDateTime
@@ -38,7 +39,8 @@ data class DoctorAssessmentItem(
     val assessment: AssessmentEntity,
     val user: User?,
     val conceptLabels: List<String>,
-    val candidates: List<StoredDiseaseCandidate>
+    val candidates: List<StoredDiseaseCandidate>,
+    val triageFlags: List<StoredTriageFlag> = emptyList()
 )
 
 data class SymptomItem(
