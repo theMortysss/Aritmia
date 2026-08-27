@@ -116,7 +116,6 @@ class AdminDoctorJourneyInstrumentedTest {
             scenario!!.close()
             scenario = null
 
-            // A blocked persisted account must not be restored into the patient area.
             prefs.edit().clear().putInt("current_patient_id", patient.id).commit()
             scenario = ActivityScenario.launch(MainActivity::class.java)
             waitForText("Вход в приложение", "blocked persisted session invalidation", 20_000)
@@ -224,7 +223,6 @@ class AdminDoctorJourneyInstrumentedTest {
             assertEquals(assessment.recognizedConceptIds, updated.recognizedConceptIds)
             assertEquals(assessment.modelVersion, updated.modelVersion)
 
-            // Re-open from persisted state instead of depending on Flow/UI refresh timing.
             clickExactText("Закрыть")
             composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}").performClick()
             waitForText("Текущий статус: Просмотрено", "reopened saved doctor workflow")
@@ -274,13 +272,15 @@ class AdminDoctorJourneyInstrumentedTest {
     ) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         while (SystemClock.elapsedRealtime() < deadline) {
-            val current = runBlocking { db.assessmentDao().getById(assessmentId)?.workflowStatus }
-            if (current == expectedStatus) return
+            val current = runBlocking { db.assessmentDao().getById(assessmentId) }
+            if (current?.workflowStatus == expectedStatus) return
             SystemClock.sleep(100)
         }
-        val actual = runBlocking { db.assessmentDao().getById(assessmentId)?.workflowStatus }
+        val actual = runBlocking { db.assessmentDao().getById(assessmentId) }
         throw AssertionError(
-            "Timed out waiting for assessment #$assessmentId workflow '$expectedStatus'; actual='$actual'"
+            "Timed out waiting for assessment #$assessmentId workflow '$expectedStatus'; " +
+                "actual='${actual?.workflowStatus}', doctorNote='${actual?.doctorNote}', " +
+                "needsDoctorAttention='${actual?.needsDoctorAttention}'"
         )
     }
 
