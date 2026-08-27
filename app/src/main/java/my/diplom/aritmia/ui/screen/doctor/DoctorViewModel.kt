@@ -179,6 +179,7 @@ class DoctorScreenViewModel @Inject constructor(
             }
             .sortedWith(
                 compareByDescending<AssessmentEntity> { it.needsDoctorAttention }
+                    .thenByDescending { doctorTriagePriority(it.triageLevel) }
                     .thenByDescending { it.createdAt }
             )
             .map { assessment -> buildItem(assessment, patients[assessment.patientId]) }
@@ -215,7 +216,8 @@ class DoctorScreenViewModel @Inject constructor(
             assessment = assessment,
             user = user,
             conceptLabels = conceptLabels,
-            candidates = AssessmentSnapshotCodec.decodeCandidates(assessment.modelCandidates)
+            candidates = AssessmentSnapshotCodec.decodeCandidates(assessment.modelCandidates),
+            triageFlags = AssessmentSnapshotCodec.decodeTriageFlags(assessment.triageFlags)
         )
     }
 
