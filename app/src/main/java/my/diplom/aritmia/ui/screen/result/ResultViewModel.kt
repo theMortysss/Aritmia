@@ -16,10 +16,13 @@ import my.diplom.aritmia.data.AssessmentSnapshotCodec
 import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.ComplaintOntology
 import my.diplom.aritmia.diagnosis.DiseaseAssessment
 import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
+import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
 import my.diplom.aritmia.ui.screen.SharedViewModel
+import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenState
@@ -52,10 +55,12 @@ class ResultViewModel @Inject constructor(
             }
             is ResultScreenIntent.UpdateEditedSymptom -> {
                 val suggestions = if (intent.editedSymptom.isNotBlank()) {
-                    _state.value.rules.filter {
+                    val ontologySuggestions = ComplaintOntology.suggestions(intent.editedSymptom, limit = 12)
+                    val ruleSuggestions = _state.value.rules.filter {
                         it.symptomKey.contains(intent.editedSymptom, ignoreCase = true) ||
                             it.medicalTerm.contains(intent.editedSymptom, ignoreCase = true)
                     }.map { it.symptomKey }.distinct()
+                    (ontologySuggestions + ruleSuggestions).distinct().take(12)
                 } else emptyList()
                 _state.update { it.copy(editedSymptom = intent.editedSymptom, suggestions = suggestions) }
             }
@@ -140,8 +145,7 @@ class ResultViewModel @Inject constructor(
             )
             db.symptomDao().update(updatedDiagnosis)
 
-            val matchingRule = rules.find { edited.contains(it.symptomKey, ignoreCase = true) }
-            if (matchingRule?.clarifyingQuestions != null) {
+            if (hasClarificationQuestions(listOf(edited), rules)) {
                 sharedViewModel.setData(updatedSymptoms, diagnosis.patientId, answers)
                 _state.update { it.copy(navigateToClarify = true, showDialog = false) }
             } else {
@@ -234,10 +238,18 @@ class ResultViewModel @Inject constructor(
                     unrecognized.add(s)
                 }
             } else {
-                unrecognized.add(s)
+                val ontologyLabels = FreeTextSymptomExtractor.extract(listOf(s)).conceptIds
+                    .mapNotNull { ComplaintOntology.concept(it)?.label }
+                    .distinct()
+                if (ontologyLabels.isNotEmpty()) {
+                    recognized.add(s)
+                    recTerms.addAll(ontologyLabels)
+                } else {
+                    unrecognized.add(s)
+                }
             }
         }
-        return SymptomClassification(recognized, unrecognized, recTerms)
+        return SymptomClassification(recognized, unrecognized, recTerms.distinct())
     }
 
     private fun parseAnswers(raw: String?): Map<String, MutableList<String>> {

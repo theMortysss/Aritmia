@@ -36,7 +36,7 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "roomRuntime" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "roomRuntime" }
 androidx-ui-viewbinding = { module = "androidx.compose.ui:ui-viewbinding" }
-dagger-compiler = { module = "com.google.dagger:dagger-compiler", version.ref = "hiltAndroid" }
+dagger-compiler = { module = "com.google.dagger:dagger-compiler", name = "dagger-compiler", version.ref = "hiltAndroid" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
 hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hiltAndroid" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

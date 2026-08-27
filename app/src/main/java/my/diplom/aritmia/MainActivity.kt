@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
@@ -20,6 +21,7 @@ import my.diplom.aritmia.data.SymptomEntity
 import my.diplom.aritmia.ui.screen.SharedViewModel
 import my.diplom.aritmia.ui.screen.admin.AdminScreen
 import my.diplom.aritmia.ui.screen.clarify.ClarifyScreen
+import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.doctor.DoctorScreen
 import my.diplom.aritmia.ui.screen.login.LoginScreen
@@ -126,14 +128,11 @@ class MainActivity : ComponentActivity() {
                         SymptomsScreen(
                             onDiagnose = { symptomList ->
                                 sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
-                                val hasQuestions = symptomList.any { symptom ->
-                                    rules.any { rule ->
-                                        symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                            rule.clarifyingQuestions != null
-                                    }
+                                if (hasClarificationQuestions(symptomList, rules)) {
+                                    navController.navigate("clarify")
+                                } else {
+                                    navController.navigate("result")
                                 }
-                                if (hasQuestions) navController.navigate("clarify")
-                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -150,14 +149,11 @@ class MainActivity : ComponentActivity() {
                                     symptomList,
                                     sharedViewModel.userId.value
                                 )
-                                val hasQuestions = symptomList.any { symptom ->
-                                    rules.any { rule ->
-                                        symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                                            rule.clarifyingQuestions != null
-                                    }
+                                if (hasClarificationQuestions(symptomList, rules)) {
+                                    navController.navigate("clarify")
+                                } else {
+                                    navController.navigate("result")
                                 }
-                                if (hasQuestions) navController.navigate("clarify")
-                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -178,12 +174,12 @@ class MainActivity : ComponentActivity() {
                                 userId = userId,
                                 initialAnswers = initialAnswers,
                                 onFinish = { answers ->
-                                    scope.launch {
+                                    scope.launch(Dispatchers.Main.immediate) {
                                         val patient = db.userDao().getPatientById(userId) ?: return@launch
                                         val rules = db.ruleDao().getAllRules()
 
-                                        val medTerms = symptoms.mapNotNull { s ->
-                                            resolveSymptomTerm(s, rules, answers).medicalTerm
+                                        val medTerms = symptoms.mapNotNull { symptom ->
+                                            resolveSymptomTerm(symptom, rules, answers).medicalTerm
                                         }.joinToString(", ")
 
                                         db.symptomDao().insert(
@@ -193,7 +189,7 @@ class MainActivity : ComponentActivity() {
                                                 probability = 0,
                                                 patientId = patient.id,
                                                 clarifyingAnswers = answers.entries
-                                                    .filter { it.value.any { a -> a.isNotBlank() } }
+                                                    .filter { it.value.any { answer -> answer.isNotBlank() } }
                                                     .joinToString(";") {
                                                         "${it.key}=${it.value.joinToString(",")}"
                                                     },
@@ -201,7 +197,9 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result")
+                                        navController.navigate("result") {
+                                            popUpTo("symptoms") { inclusive = false }
+                                        }
                                     }
                                 },
                                 onLogout = onLogout
@@ -220,7 +218,11 @@ class MainActivity : ComponentActivity() {
                                 userId = userId,
                                 onLogout = onLogout,
                                 onBack = { navController.popBackStack("symptoms", inclusive = false) },
-                                onContinue = { navController.navigate("symptoms-followup") },
+                                onContinue = {
+                                    navController.navigate("symptoms-followup") {
+                                        popUpTo("symptoms") { inclusive = false }
+                                    }
+                                },
                                 navController = navController,
                                 sharedViewModel = sharedViewModel
                             )

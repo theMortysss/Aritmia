@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.ComplaintOntology
+import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
+import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenIntent
 import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenState
 import java.time.LocalDateTime
@@ -44,10 +47,13 @@ class SymptomsViewModel @Inject constructor(
         when (intent) {
             is SymptomsScreenIntent.UpdateNewSymptom -> {
                 val suggestions = if (intent.newSymptom.isNotBlank()) {
-                    _state.value.rules
+                    val ontologySuggestions = ComplaintOntology.suggestions(intent.newSymptom, limit = 12)
+                    val ruleSuggestions = _state.value.rules
                         .map { it.symptomKey }
                         .filter { it.contains(intent.newSymptom, ignoreCase = true) }
-                        .distinct().sorted()
+                        .distinct()
+                        .sorted()
+                    (ontologySuggestions + ruleSuggestions).distinct().take(12)
                 } else emptyList()
                 _state.update { it.copy(newSymptom = intent.newSymptom, suggestions = suggestions) }
             }
@@ -93,14 +99,7 @@ class SymptomsViewModel @Inject constructor(
                 val rules = _state.value.rules
                 val patientId = _state.value.patientId
 
-                val hasQuestions = symptoms.any { symptom ->
-                    rules.any { rule ->
-                        symptom.contains(rule.symptomKey, ignoreCase = true) &&
-                            rule.clarifyingQuestions != null
-                    }
-                }
-
-                if (hasQuestions) {
+                if (hasClarificationQuestions(symptoms, rules)) {
                     _state.update { it.copy(navigateToDiagnose = true, isDiagnosed = true) }
                 } else {
                     viewModelScope.launch {
@@ -110,8 +109,10 @@ class SymptomsViewModel @Inject constructor(
                         }
                         if (!_state.value.isDiagnosed) {
                             val medicalTerms = symptoms.mapNotNull { symptom ->
-                                rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
+                                val ruleTerm = rules
+                                    .find { symptom.contains(it.symptomKey, ignoreCase = true) }
                                     ?.medicalTerm
+                                ruleTerm ?: ontologyTermFor(symptom)
                             }.joinToString(", ")
 
                             db.symptomDao().insert(
@@ -136,6 +137,13 @@ class SymptomsViewModel @Inject constructor(
             is SymptomsScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }
         }
+    }
+
+    private fun ontologyTermFor(symptom: String): String? {
+        val labels = FreeTextSymptomExtractor.extract(listOf(symptom)).conceptIds
+            .mapNotNull { ComplaintOntology.concept(it)?.label }
+            .distinct()
+        return labels.joinToString(" / ").ifBlank { null }
     }
 
     /**

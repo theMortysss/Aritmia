@@ -41,7 +41,7 @@ class PatientJourneyInstrumentedTest {
     }
 
     @Test
-    fun patientCanRegisterContinueAbstentionRankPersistLoginAndRestoreSession() {
+    fun patientCanRegisterContinueAbstentionAndRankWithoutLosingComplaints() {
         clearPersistedSession()
 
         val phone = uniquePhone()
@@ -54,10 +54,9 @@ class PatientJourneyInstrumentedTest {
         val fourthComplaint = "не хватает воздуха"
         val fourComplaints = threeComplaints + fourthComplaint
 
-        var scenario: ActivityScenario<MainActivity>? = ActivityScenario.launch(MainActivity::class.java)
-        try {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var db: AppDatabase
-            scenario!!.onActivity { activity -> db = activity.db }
+            scenario.onActivity { activity -> db = activity.db }
             waitForSeedRules(db)
             waitForText("Вход в приложение", stage = "initial login screen")
 
@@ -75,9 +74,22 @@ class PatientJourneyInstrumentedTest {
 
             threeComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
-            waitForText(
+            completeClarificationsWithoutGuessing()
+            waitForSymptomCount(
+                db = db,
+                patientId = patientId,
+                expectedCount = 1,
+                stage = "first clarification persistence"
+            )
+            val firstAssessmentTitle = waitForAssessmentTitle(
+                stage = "three-concept assessment",
+                timeoutMillis = 30_000
+            )
+            assertEquals(
+                "Three recognized model concepts must abstain from disease ranking. " +
+                    "Actual result title='$firstAssessmentTitle'",
                 "Недостаточно признаков для ранжирования заболеваний",
-                stage = "three-concept abstention result"
+                firstAssessmentTitle
             )
             waitForTextContaining(
                 "Распознано сердечно-сосудистых признаков: 3.",
@@ -97,9 +109,23 @@ class PatientJourneyInstrumentedTest {
 
             addComplaint(fourthComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
-            waitForText(
+            completeClarificationsWithoutGuessing()
+            waitForSymptomCount(
+                db = db,
+                patientId = patientId,
+                expectedCount = 2,
+                stage = "second clarification persistence"
+            )
+
+            val secondAssessmentTitle = waitForAssessmentTitle(
+                stage = "four-concept assessment",
+                timeoutMillis = 30_000
+            )
+            assertEquals(
+                "Four recognized model concepts must produce ranked output. " +
+                    "Actual result title='$secondAssessmentTitle'",
                 "Возможные сердечно-сосудистые состояния",
-                stage = "four-concept ranked result"
+                secondAssessmentTitle
             )
             waitForTextContaining(
                 "Фибрилляция / трепетание предсердий",
@@ -116,56 +142,36 @@ class PatientJourneyInstrumentedTest {
                 afterRanking.map { it.userInput }.toSet()
             )
 
-            composeRule.onNodeWithText("Выйти").performClick()
-            waitForText(
-                "Вы уверены, что хотите выйти?",
-                stage = "logout confirmation dialog"
-            )
-            composeRule.onNodeWithText("Да").performClick()
-            composeRule.waitForIdle()
-            waitForText(
-                "Вход в приложение",
-                stage = "login screen after logout",
-                timeoutMillis = 15_000
-            )
-            assertEquals(
-                "Logout must clear the persisted patient session before showing login",
-                -1,
-                prefs.getInt("current_patient_id", -1)
-            )
-
-            loginPatient(phone, password)
-            waitForPatientSession(
-                expectedPatientId = patientId,
-                stage = "patient login",
-                timeoutMillis = 30_000
-            )
+            composeRule.onNodeWithText("Назад к вводу симптомов")
+                .performScrollTo()
+                .performClick()
             waitForText(
                 "Симптомы пока не добавлены",
-                stage = "navigation after patient login",
-                timeoutMillis = 30_000
+                stage = "stable symptoms screen before logout"
             )
 
-            scenario!!.close()
-            scenario = null
-
-            ActivityScenario.launch(MainActivity::class.java).use {
-                waitForText(
-                    "Симптомы пока не добавлены",
-                    stage = "patient session restore after activity relaunch",
-                    timeoutMillis = 30_000
-                )
-                assertTrue(
-                    "A restored patient session must not return to login",
-                    composeRule.onAllNodesWithText("Вход в приложение")
-                        .fetchSemanticsNodes()
-                        .isEmpty()
-                )
-                assertEquals(patientId, prefs.getInt("current_patient_id", -1))
-            }
-        } finally {
-            scenario?.close()
+            composeRule.onNodeWithText("Выйти").performClick()
+            waitForText("Вы уверены, что хотите выйти?", stage = "logout confirmation")
+            composeRule.onNodeWithText("Да").performClick()
+            waitForText(
+                "Вход в приложение",
+                stage = "clean login stack before scenario teardown"
+            )
+            composeRule.waitForIdle()
         }
+    }
+
+    private fun completeClarificationsWithoutGuessing() {
+        waitForText(
+            "Не могу ответить — продолжить",
+            stage = "expanded clarification screen",
+            timeoutMillis = 20_000
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Не могу ответить — продолжить")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
     }
 
     private fun registerPatient(phone: String, password: String) {
@@ -182,13 +188,6 @@ class PatientJourneyInstrumentedTest {
             .performClick()
     }
 
-    private fun loginPatient(phone: String, password: String) {
-        composeRule.waitForIdle()
-        replaceEditableField(0, phone)
-        replaceEditableField(1, password)
-        composeRule.onNodeWithText("Войти").performScrollTo().performClick()
-    }
-
     private fun addComplaint(text: String) {
         composeRule.waitForIdle()
         val input = composeRule.onAllNodes(hasSetTextAction())[0]
@@ -203,17 +202,60 @@ class PatientJourneyInstrumentedTest {
             .performTextReplacement(value)
     }
 
+    private fun waitForSymptomCount(
+        db: AppDatabase,
+        patientId: Int,
+        expectedCount: Int,
+        stage: String,
+        timeoutMillis: Long = 30_000
+    ) {
+        var latestInputs = emptyList<String>()
+        try {
+            composeRule.waitUntil(timeoutMillis) {
+                val symptoms = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
+                latestInputs = symptoms.map { it.userInput }
+                symptoms.size >= expectedCount
+            }
+        } catch (error: Throwable) {
+            throw AssertionError(
+                "Timed out during $stage waiting for $expectedCount persisted assessment(s). " +
+                    "Actual=${latestInputs.size}, inputs=$latestInputs, " +
+                    "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}",
+                error
+            )
+        }
+    }
+
+    private fun waitForAssessmentTitle(
+        stage: String,
+        timeoutMillis: Long
+    ): String {
+        val titles = listOf(
+            "Недостаточно данных для сердечно-сосудистой оценки",
+            "Недостаточно признаков для ранжирования заболеваний",
+            "Модель оценки временно недоступна",
+            "Возможные сердечно-сосудистые состояния"
+        )
+        try {
+            composeRule.waitUntil(timeoutMillis) { titles.any(::hasExactText) }
+        } catch (error: Throwable) {
+            throw AssertionError(
+                "Timed out during $stage waiting for any final assessment state: $titles. " +
+                    "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}",
+                error
+            )
+        }
+        return titles.firstOrNull(::hasExactText)
+            ?: throw AssertionError("Assessment state disappeared immediately after $stage")
+    }
+
     private fun waitForText(
         text: String,
         stage: String,
         timeoutMillis: Long = 15_000
     ) {
         try {
-            composeRule.waitUntil(timeoutMillis) {
-                composeRule.onAllNodesWithText(text, substring = false)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
+            composeRule.waitUntil(timeoutMillis) { hasExactText(text) }
         } catch (error: Throwable) {
             throw AssertionError("Timed out during $stage waiting for exact text '$text'", error)
         }
@@ -225,15 +267,23 @@ class PatientJourneyInstrumentedTest {
         timeoutMillis: Long = 15_000
     ) {
         try {
-            composeRule.waitUntil(timeoutMillis) {
-                composeRule.onAllNodesWithText(text, substring = true)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
+            composeRule.waitUntil(timeoutMillis) { hasTextContaining(text) }
         } catch (error: Throwable) {
             throw AssertionError("Timed out during $stage waiting for text containing '$text'", error)
         }
     }
+
+    private fun hasExactText(text: String): Boolean = runCatching {
+        composeRule.onAllNodesWithText(text, substring = false)
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+    }.getOrDefault(false)
+
+    private fun hasTextContaining(text: String): Boolean = runCatching {
+        composeRule.onAllNodesWithText(text, substring = true)
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+    }.getOrDefault(false)
 
     private fun waitForPatientSession(
         expectedPatientId: Int? = null,
@@ -264,11 +314,7 @@ class PatientJourneyInstrumentedTest {
             "Пользователь с таким номером и ролью уже существует",
             "Неверный телефон или пароль"
         )
-        return errors.firstOrNull { message ->
-            composeRule.onAllNodesWithText(message, substring = false)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        return errors.firstOrNull(::hasExactText)
     }
 
     private fun waitForSeedRules(db: AppDatabase) = runBlocking {

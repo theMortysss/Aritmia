@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import my.diplom.aritmia.ui.composable.TopBar
@@ -29,7 +30,9 @@ fun ClarifyScreen(
 
     LaunchedEffect(state.navigateToFinish) {
         if (state.navigateToFinish) {
-            onFinish(state.answers)
+            val answers = state.answers
+            onFinish(answers)
+            viewModel.onIntent(ClarifyScreenIntent.FinishNavigationHandled)
         }
     }
 
@@ -52,51 +55,65 @@ fun ClarifyScreen(
                     .padding(padding)
                     .padding(16.dp)
             ) {
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            state.symptoms.forEach { symptom ->
+                                val prompts = clarificationPromptsFor(symptom, state.rules)
+                                val answers = state.answers[symptom].orEmpty()
+                                prompts.indices.forEach { index ->
+                                    if (answers.getOrNull(index).isNullOrBlank()) {
+                                        viewModel.onIntent(
+                                            ClarifyScreenIntent.UpdateAnswer(
+                                                symptom,
+                                                index,
+                                                "не могу ответить"
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            viewModel.onIntent(ClarifyScreenIntent.Finish)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Не могу ответить — продолжить")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 items(state.symptoms) { symptom ->
-                    val rule      = state.rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
-                    val questions = rule?.clarifyingQuestions?.split(";")?.filter { it.isNotBlank() }
-                        ?: emptyList()
+                    val prompts = clarificationPromptsFor(symptom, state.rules)
                     val symptomAnswers = state.answers[symptom] ?: mutableListOf()
 
-                    if (questions.isNotEmpty()) {
-                        questions.forEachIndexed { index, question ->
-                            val answer = symptomAnswers.getOrNull(index) ?: ""
+                    prompts.forEachIndexed { index, prompt ->
+                        val answer = symptomAnswers.getOrNull(index) ?: ""
 
-                            val answerOptions = (rule?.answerTriggers?.split(";")
-                                ?.filter { it.isNotBlank() }
-                                ?.mapNotNull { it.split("=").firstOrNull() }
-                                ?: listOf("да", "нет")).toMutableList()
-                            answerOptions.add("не могу ответить")
-
-                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                                Text("Симптом: $symptom")
-                                Text(question)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .wrapContentWidth(Alignment.CenterHorizontally),
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    answerOptions.forEach { option ->
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier          = Modifier.padding(horizontal = 8.dp)
-                                        ) {
-                                            RadioButton(
-                                                selected = answer == option,
-                                                onClick  = {
-                                                    viewModel.onIntent(
-                                                        ClarifyScreenIntent.UpdateAnswer(
-                                                            symptom, index, option
-                                                        )
+                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text("Симптом: $symptom")
+                            Text(prompt.text)
+                            Spacer(Modifier.height(4.dp))
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                prompt.options.forEach { option ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        RadioButton(
+                                            selected = answer == option,
+                                            onClick = {
+                                                viewModel.onIntent(
+                                                    ClarifyScreenIntent.UpdateAnswer(
+                                                        symptom, index, option
                                                     )
-                                                }
-                                            )
-                                            Text(
-                                                text     = option.replaceFirstChar { it.uppercase() },
-                                                modifier = Modifier.align(Alignment.CenterVertically)
-                                            )
-                                        }
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("clarify_option_$option")
+                                        )
+                                        Text(
+                                            text = option.replaceFirstChar { it.uppercase() },
+                                            modifier = Modifier.weight(1f)
+                                        )
                                     }
                                 }
                             }
@@ -108,17 +125,15 @@ fun ClarifyScreen(
                     Spacer(Modifier.height(16.dp))
 
                     val allAnswered = state.symptoms.all { symptom ->
-                        val rule      = state.rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
-                        val questions = rule?.clarifyingQuestions?.split(";")
-                            ?.filter { it.isNotBlank() } ?: emptyList()
-                        val answers   = state.answers[symptom] ?: emptyList()
-                        questions.size == answers.size && answers.all { it.isNotBlank() }
+                        val prompts = clarificationPromptsFor(symptom, state.rules)
+                        val answers = state.answers[symptom] ?: emptyList()
+                        prompts.indices.all { index -> answers.getOrNull(index)?.isNotBlank() == true }
                     }
 
                     Button(
-                        onClick  = { viewModel.onIntent(ClarifyScreenIntent.Finish) },
+                        onClick = { viewModel.onIntent(ClarifyScreenIntent.Finish) },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled  = allAnswered
+                        enabled = allAnswered
                     ) {
                         Text("Завершить")
                     }

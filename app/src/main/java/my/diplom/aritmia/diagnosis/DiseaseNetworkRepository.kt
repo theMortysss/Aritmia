@@ -37,12 +37,13 @@ class DiseaseNetworkRepository(private val context: Context) {
         private const val FORMAT_VERSION = 1
 
         const val MODEL_VERSION = "v2"
-        const val EXTRACTOR_VERSION = "russian-complaint-v3"
+        const val EXTRACTOR_VERSION = "russian-complaint-v4"
 
         // Консервативный evidence gate, а не confidence/OOD threshold.
         // Исследовательская OOF-проверка показала заметно более устойчивое ранжирование
-        // для профилей с 4+ complaint-derived concepts. Профили с 1–3 concepts поэтому
-        // не передаются в top-5: пользователю предлагается дополнить свободный текст жалоб.
+        // для профилей с 4+ complaint-derived MODEL concepts. Расширенная complaint ontology
+        // может распознавать дополнительные context-only concepts, но они не увеличивают
+        // evidence count старой pretrained v2-модели и не меняют её 47-мерный вход.
         // Это инженерный порог достаточности признаков, не клиническая гарантия.
         const val MIN_CONCEPTS_FOR_RANKING = 4
     }
@@ -76,32 +77,35 @@ class DiseaseNetworkRepository(private val context: Context) {
         limit: Int = 5
     ): DiseaseAssessment = withContext(Dispatchers.Default) {
         val extraction = FreeTextSymptomExtractor.extract(complaints)
-        val concepts = extraction.conceptIds
+        val modelConcepts = extraction.modelConceptIds
 
-        if (concepts.isEmpty()) {
+        // OUT_OF_SCOPE now means the complaint ontology recognized nothing at all.
+        // A known context-only complaint (for example low_bp) remains in-scope for the
+        // dialogue/clarification layer even though it is not an MLP v2 feature.
+        if (extraction.conceptIds.isEmpty()) {
             return@withContext DiseaseAssessment(
                 status = DiseaseAssessmentStatus.OUT_OF_SCOPE,
                 recognizedConceptIds = emptySet()
             )
         }
 
-        if (concepts.size < MIN_CONCEPTS_FOR_RANKING) {
+        if (modelConcepts.size < MIN_CONCEPTS_FOR_RANKING) {
             return@withContext DiseaseAssessment(
                 status = DiseaseAssessmentStatus.INSUFFICIENT_EVIDENCE,
-                recognizedConceptIds = concepts
+                recognizedConceptIds = modelConcepts
             )
         }
 
         initialize()
         val model = network ?: return@withContext DiseaseAssessment(
             status = DiseaseAssessmentStatus.MODEL_UNAVAILABLE,
-            recognizedConceptIds = concepts
+            recognizedConceptIds = modelConcepts
         )
         val outputs = outputDiseaseIds
         if (outputs.size != model.outputSize) {
             return@withContext DiseaseAssessment(
                 status = DiseaseAssessmentStatus.MODEL_UNAVAILABLE,
-                recognizedConceptIds = concepts
+                recognizedConceptIds = modelConcepts
             )
         }
 
@@ -109,7 +113,7 @@ class DiseaseNetworkRepository(private val context: Context) {
             .mapIndexed { index, concept -> concept.id to index }
             .toMap()
         val vector = DoubleArray(DiseaseCatalog.concepts.size)
-        concepts.forEach { id -> conceptIndex[id]?.let { vector[it] = 1.0 } }
+        modelConcepts.forEach { id -> conceptIndex[id]?.let { vector[it] = 1.0 } }
 
         val probabilities = model.predict(vector)
         val candidates = outputs.mapIndexedNotNull { index, diseaseId ->
@@ -118,7 +122,7 @@ class DiseaseNetworkRepository(private val context: Context) {
                 id = disease.id,
                 name = disease.name,
                 modelScorePercent = (probabilities[index] * 100.0).roundToInt().coerceIn(0, 100),
-                matchedSignals = DiseaseCatalog.explain(disease.id, concepts)
+                matchedSignals = DiseaseCatalog.explain(disease.id, modelConcepts)
             )
         }
             .sortedByDescending { it.modelScorePercent }
@@ -126,7 +130,7 @@ class DiseaseNetworkRepository(private val context: Context) {
 
         DiseaseAssessment(
             status = DiseaseAssessmentStatus.RANKED,
-            recognizedConceptIds = concepts,
+            recognizedConceptIds = modelConcepts,
             candidates = candidates
         )
     }
