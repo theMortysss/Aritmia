@@ -94,7 +94,7 @@ data class AssessmentEntity(
     val workflowStatus: String = AssessmentWorkflow.NEW,
     val needsDoctorAttention: Boolean = true,
     val doctorNote: String? = null,
-    val triageLevel: String = "NONE",
+    @ColumnInfo(defaultValue = "'NONE'") val triageLevel: String = "NONE",
     val triageFlags: String? = null
 )
 
