@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
@@ -173,7 +174,7 @@ class MainActivity : ComponentActivity() {
                                 userId = userId,
                                 initialAnswers = initialAnswers,
                                 onFinish = { answers ->
-                                    scope.launch {
+                                    scope.launch(Dispatchers.Main.immediate) {
                                         val patient = db.userDao().getPatientById(userId) ?: return@launch
                                         val rules = db.ruleDao().getAllRules()
 
