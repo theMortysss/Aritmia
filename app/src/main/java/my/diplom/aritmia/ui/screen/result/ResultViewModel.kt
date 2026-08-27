@@ -211,7 +211,9 @@ class ResultViewModel @Inject constructor(
             createdAt = existing?.createdAt ?: diagnosis.createdAt,
             workflowStatus = existing?.workflowStatus ?: AssessmentWorkflow.NEW,
             needsDoctorAttention = needsDoctorAttention,
-            doctorNote = existing?.doctorNote
+            doctorNote = existing?.doctorNote,
+            triageLevel = triage.level.name,
+            triageFlags = AssessmentSnapshotCodec.encodeTriageFlags(triage.flags)
         )
 
         if (existing == null) db.assessmentDao().insert(snapshot)
