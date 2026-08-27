@@ -7,23 +7,11 @@ package my.diplom.aritmia.diagnosis
 object FreeTextSymptomExtractor {
 
     data class Extraction(
+        /** All complaint concepts known to the patient-facing ontology. */
         val conceptIds: Set<String>,
+        /** Only features that are part of the immutable pretrained disease_model v2 input. */
+        val modelConceptIds: Set<String>,
         val matchedPhrases: Map<String, List<String>>
-    )
-
-    /**
-     * Small research-driven lexical supplements for common natural Russian forms.
-     * They remain complaint-text aliases only; no structured clinical inputs are added.
-     */
-    private val supplementalAliases = mapOf(
-        "chest_pain" to listOf("боли в груди"),
-        "dyspnea" to listOf("нехватка воздуха", "нехватки воздуха", "трудно дышать"),
-        "syncope" to listOf("потерял сознание", "потеряла сознание", "терял сознание", "теряла сознание"),
-        "pleuritic_pain" to listOf(
-            "когда вдыхаю боль в груди усиливается",
-            "при вдохе боль усиливается",
-            "боль усиливается на вдохе"
-        )
     )
 
     fun extract(texts: List<String>): Extraction {
@@ -35,10 +23,8 @@ object FreeTextSymptomExtractor {
 
         val matched = linkedMapOf<String, MutableList<String>>()
 
-        DiseaseCatalog.concepts.forEach { concept ->
-            val aliases = (
-                concept.aliases + concept.label + supplementalAliases[concept.id].orEmpty()
-            ).map(::normalize)
+        ComplaintOntology.concepts.forEach { concept ->
+            val aliases = (concept.aliases + concept.label).map(::normalize)
             normalizedInputs.forEach { input ->
                 aliases.forEach { alias ->
                     if (matches(input, alias) && !isNegated(input, alias)) {
@@ -50,6 +36,7 @@ object FreeTextSymptomExtractor {
 
         return Extraction(
             conceptIds = matched.keys,
+            modelConceptIds = ComplaintOntology.toModelConceptIds(matched.keys),
             matchedPhrases = matched.mapValues { (_, values) -> values.distinct() }
         )
     }
@@ -58,7 +45,7 @@ object FreeTextSymptomExtractor {
         val extraction = extract(texts)
         val index = DiseaseCatalog.concepts.mapIndexed { i, c -> c.id to i }.toMap()
         return DoubleArray(DiseaseCatalog.concepts.size).also { vector ->
-            extraction.conceptIds.forEach { id -> index[id]?.let { vector[it] = 1.0 } }
+            extraction.modelConceptIds.forEach { id -> index[id]?.let { vector[it] = 1.0 } }
         }
     }
 
@@ -125,7 +112,7 @@ object FreeTextSymptomExtractor {
     private fun normalize(value: String): String = value
         .lowercase()
         .replace('ё', 'е')
-        .replace(Regex("[^а-яa-z0-9%+\\s-]"), " ")
+        .replace(Regex("[^а-яa-z0-9%+\\s/-]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
 
@@ -204,7 +191,7 @@ object FreeTextSymptomExtractor {
         // negated word to belong to the matched alias keeps positive forms such as
         // "не хватает воздуха" intact and avoids suppressing unrelated nearby symptoms.
         val directlyNegatableAliasWords = setOf(
-            "редк", "част", "высок",
+            "редк", "част", "высок", "низк", "понижен",
             "потерял", "потеряла", "терял", "теряла",
             "трудно", "усиливается"
         )
