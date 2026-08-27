@@ -47,6 +47,19 @@ class ComplaintTriageTest {
     }
 
     @Test
+    fun lowBloodPressureWithDizzinessNeedsReviewEvenWhenReadingIsUnknown() {
+        val result = ComplaintTriage.assess(
+            complaints = listOf("Низкое давление", "Кружится голова"),
+            clarificationAnswers = mapOf(
+                "concept:low_bp:measured_bp" to "не измерял(а) / не помню"
+            )
+        )
+
+        assertEquals(ComplaintTriageLevel.MEDICAL_REVIEW, result.level)
+        assertTrue(result.flags.any { it.id == "symptomatic_hypotension" })
+    }
+
+    @Test
     fun severeHypertensionWithChestPainIsEmergency() {
         val result = ComplaintTriage.assess(
             complaints = listOf("Высокое давление", "Боль в груди"),
