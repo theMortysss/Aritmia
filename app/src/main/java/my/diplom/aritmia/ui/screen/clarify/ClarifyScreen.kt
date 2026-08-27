@@ -71,10 +71,11 @@ fun ClarifyScreen(
                                     }
                                 }
                             }
+                            viewModel.onIntent(ClarifyScreenIntent.Finish)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Не могу ответить на оставшиеся вопросы")
+                        Text("Не могу ответить — продолжить")
                     }
                     Spacer(Modifier.height(8.dp))
                 }
@@ -120,13 +121,11 @@ fun ClarifyScreen(
 
                 item {
                     Spacer(Modifier.height(16.dp))
-
                     val allAnswered = state.symptoms.all { symptom ->
                         val prompts = clarificationPromptsFor(symptom, state.rules)
                         val answers = state.answers[symptom] ?: emptyList()
                         prompts.indices.all { index -> answers.getOrNull(index)?.isNotBlank() == true }
                     }
-
                     Button(
                         onClick = { viewModel.onIntent(ClarifyScreenIntent.Finish) },
                         modifier = Modifier.fillMaxWidth(),
