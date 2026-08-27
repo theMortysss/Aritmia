@@ -197,7 +197,7 @@ class MainActivity : ComponentActivity() {
                                         )
                                         sharedViewModel.updateAnswers(answers)
                                         navController.navigate("result") {
-                                            popUpTo("clarify") { inclusive = true }
+                                            popUpTo("symptoms") { inclusive = false }
                                         }
                                     }
                                 },
