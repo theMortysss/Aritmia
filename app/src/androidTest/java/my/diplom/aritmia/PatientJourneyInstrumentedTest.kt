@@ -75,9 +75,21 @@ class PatientJourneyInstrumentedTest {
             threeComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             completeClarificationsWithoutGuessing()
-            waitForText(
+            waitForSymptomCount(
+                db = db,
+                patientId = patientId,
+                expectedCount = 1,
+                stage = "first clarification persistence"
+            )
+            val firstAssessmentTitle = waitForAssessmentTitle(
+                stage = "three-concept assessment",
+                timeoutMillis = 30_000
+            )
+            assertEquals(
+                "Three recognized model concepts must abstain from disease ranking. " +
+                    "Actual result title='$firstAssessmentTitle'",
                 "Недостаточно признаков для ранжирования заболеваний",
-                stage = "three-concept abstention result"
+                firstAssessmentTitle
             )
             waitForTextContaining(
                 "Распознано сердечно-сосудистых признаков: 3.",
@@ -98,6 +110,12 @@ class PatientJourneyInstrumentedTest {
             addComplaint(fourthComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
             completeClarificationsWithoutGuessing()
+            waitForSymptomCount(
+                db = db,
+                patientId = patientId,
+                expectedCount = 2,
+                stage = "second clarification persistence"
+            )
 
             val secondAssessmentTitle = waitForAssessmentTitle(
                 stage = "four-concept assessment",
@@ -185,6 +203,28 @@ class PatientJourneyInstrumentedTest {
             .performTextReplacement(value)
     }
 
+    private fun waitForSymptomCount(
+        db: AppDatabase,
+        patientId: Int,
+        expectedCount: Int,
+        stage: String,
+        timeoutMillis: Long = 30_000
+    ) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMillis
+        var latestInputs = emptyList<String>()
+        while (SystemClock.uptimeMillis() < deadline) {
+            val symptoms = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
+            latestInputs = symptoms.map { it.userInput }
+            if (symptoms.size >= expectedCount) return
+            SystemClock.sleep(50)
+        }
+        throw AssertionError(
+            "Timed out during $stage waiting for $expectedCount persisted assessment(s). " +
+                "Actual=${latestInputs.size}, inputs=$latestInputs, " +
+                "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}"
+        )
+    }
+
     private fun waitForAssessmentTitle(
         stage: String,
         timeoutMillis: Long
@@ -199,7 +239,8 @@ class PatientJourneyInstrumentedTest {
             composeRule.waitUntil(timeoutMillis) { titles.any(::hasExactText) }
         } catch (error: Throwable) {
             throw AssertionError(
-                "Timed out during $stage waiting for any final assessment state: $titles",
+                "Timed out during $stage waiting for any final assessment state: $titles. " +
+                    "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}",
                 error
             )
         }
