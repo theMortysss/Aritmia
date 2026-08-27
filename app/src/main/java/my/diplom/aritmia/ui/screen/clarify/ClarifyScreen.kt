@@ -62,16 +62,12 @@ fun ClarifyScreen(
                         Column(modifier = Modifier.padding(vertical = 8.dp)) {
                             Text("Симптом: $symptom")
                             Text(prompt.text)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentWidth(Alignment.CenterHorizontally),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
+                            Spacer(Modifier.height(4.dp))
+                            Column(modifier = Modifier.fillMaxWidth()) {
                                 prompt.options.forEach { option ->
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         RadioButton(
                                             selected = answer == option,
@@ -85,7 +81,7 @@ fun ClarifyScreen(
                                         )
                                         Text(
                                             text = option.replaceFirstChar { it.uppercase() },
-                                            modifier = Modifier.align(Alignment.CenterVertically)
+                                            modifier = Modifier.weight(1f)
                                         )
                                     }
                                 }
@@ -100,7 +96,7 @@ fun ClarifyScreen(
                     val allAnswered = state.symptoms.all { symptom ->
                         val prompts = clarificationPromptsFor(symptom, state.rules)
                         val answers = state.answers[symptom] ?: emptyList()
-                        prompts.size == answers.size && answers.all { it.isNotBlank() }
+                        prompts.indices.all { index -> answers.getOrNull(index)?.isNotBlank() == true }
                     }
 
                     Button(
