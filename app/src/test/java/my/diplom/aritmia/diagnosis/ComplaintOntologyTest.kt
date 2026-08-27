@@ -47,6 +47,23 @@ class ComplaintOntologyTest {
     }
 
     @Test
+    fun normalTemperatureMeasurementDoesNotInventFever() {
+        val extraction = FreeTextSymptomExtractor.extract(
+            listOf("Температура 36.6")
+        )
+        assertFalse("fever" in extraction.conceptIds)
+    }
+
+    @Test
+    fun explicitHighTemperatureStillMapsToFeverContext() {
+        val extraction = FreeTextSymptomExtractor.extract(
+            listOf("Высокая температура")
+        )
+        assertTrue("fever" in extraction.conceptIds)
+        assertTrue(extraction.modelConceptIds.isEmpty())
+    }
+
+    @Test
     fun ontologyCanGrowWithoutChangingPretrainedModelContract() {
         assertEquals(47, DiseaseCatalog.concepts.size)
         assertEquals(47, ComplaintOntology.modelConceptIds.size)
