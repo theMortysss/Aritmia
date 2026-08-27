@@ -35,6 +35,15 @@ jobs:
       - name: Unit tests and debug APK
         run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --no-daemon
 
+      - name: Verify Room schema is committed
+        run: |
+          if [ -n "$(git status --porcelain -- app/schemas)" ]; then
+            echo "Room schema changed during the build. Commit the generated schema files."
+            git status --short -- app/schemas
+            find app/schemas -type f -name '*.json' -print -exec cat {} \;
+            exit 1
+          fi
+
   emulator-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 30
