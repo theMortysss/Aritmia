@@ -32,6 +32,7 @@ class DoctorScreenViewModel @Inject constructor(
     val state: StateFlow<DoctorScreenState> = _state.asStateFlow()
 
     private var allAssessments: List<AssessmentEntity> = emptyList()
+    private var openedAssessmentId: Int? = null
 
     init {
         viewModelScope.launch {
@@ -128,7 +129,8 @@ class DoctorScreenViewModel @Inject constructor(
             }
 
             is DoctorScreenIntent.OpenAssessment -> openAssessment(intent.assessmentId)
-            is DoctorScreenIntent.CloseAssessment ->
+            is DoctorScreenIntent.CloseAssessment -> {
+                openedAssessmentId = null
                 _state.update {
                     it.copy(
                         selectedAssessment = null,
@@ -137,12 +139,13 @@ class DoctorScreenViewModel @Inject constructor(
                         doctorNoteDraft = ""
                     )
                 }
+            }
 
             is DoctorScreenIntent.UpdateDoctorNote ->
                 _state.update { it.copy(doctorNoteDraft = intent.note) }
 
             is DoctorScreenIntent.SaveAssessmentWorkflow ->
-                saveAssessmentWorkflow(intent.assessmentId, intent.workflowStatus)
+                saveAssessmentWorkflow(intent.workflowStatus)
 
             is DoctorScreenIntent.ShowRuleEditor ->
                 _state.update { it.copy(showRuleEditor = true) }
@@ -243,10 +246,14 @@ class DoctorScreenViewModel @Inject constructor(
     }
 
     private fun openAssessment(assessmentId: Int) {
+        openedAssessmentId = assessmentId
         viewModelScope.launch {
             val row = allAssessments.firstOrNull { it.id == assessmentId }
                 ?: db.assessmentDao().getById(assessmentId)
-                ?: return@launch
+                ?: run {
+                    if (openedAssessmentId == assessmentId) openedAssessmentId = null
+                    return@launch
+                }
             val patient = db.userDao().getPatientById(row.patientId)
             val item = buildItem(row, patient)
             val timeline = db.assessmentDao().getByPatientId(row.patientId)
@@ -262,9 +269,11 @@ class DoctorScreenViewModel @Inject constructor(
         }
     }
 
-    private fun saveAssessmentWorkflow(assessmentId: Int, workflowStatus: String) {
+    private fun saveAssessmentWorkflow(workflowStatus: String) {
         if (workflowStatus !in AssessmentWorkflow.values) return
-        if (assessmentId <= 0) return
+        val assessmentId = openedAssessmentId
+            ?: _state.value.selectedAssessment?.assessment?.id
+            ?: return
         val note = _state.value.doctorNoteDraft.trim().takeIf { it.isNotBlank() }
         val needsAttention = workflowStatus == AssessmentWorkflow.NEW ||
             workflowStatus == AssessmentWorkflow.CONTACT_REQUIRED
