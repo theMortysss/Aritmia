@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     val scope = rememberCoroutineScope()
 
-                    val onLogout = {
+                    val onLogout: () -> Unit = {
                         clearPersistedSession()
                         scope.launch {
                             if (root == "symptoms") {
