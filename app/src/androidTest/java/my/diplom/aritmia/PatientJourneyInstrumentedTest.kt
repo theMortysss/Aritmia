@@ -117,18 +117,12 @@ class PatientJourneyInstrumentedTest {
                 afterRanking.map { it.userInput }.toSet()
             )
 
-            // The patient journey has two clarify/result cycles plus a follow-up screen on the
-            // back stack. Unwind those entries individually so Navigation can complete each
-            // entry's lifecycle transition before ActivityScenario tears down the Activity.
-            repeat(5) {
-                scenario.onActivity { activity ->
-                    activity.onBackPressedDispatcher.onBackPressed()
-                }
-                composeRule.waitForIdle()
-            }
+            composeRule.onNodeWithText("Назад к вводу симптомов")
+                .performScrollTo()
+                .performClick()
             waitForText(
                 "Симптомы пока не добавлены",
-                stage = "stable base symptoms screen before logout"
+                stage = "stable symptoms screen before logout"
             )
 
             composeRule.onNodeWithText("Выйти").performClick()
