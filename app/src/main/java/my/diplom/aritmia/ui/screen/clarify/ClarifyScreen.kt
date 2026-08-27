@@ -30,7 +30,9 @@ fun ClarifyScreen(
 
     LaunchedEffect(state.navigateToFinish) {
         if (state.navigateToFinish) {
-            onFinish(state.answers)
+            val answers = state.answers
+            viewModel.onIntent(ClarifyScreenIntent.FinishNavigationHandled)
+            onFinish(answers)
         }
     }
 
