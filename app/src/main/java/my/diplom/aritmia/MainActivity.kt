@@ -93,6 +93,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun redirectInvalidSessionIfCurrent(route: String) {
+                if (navController.currentDestination?.route == route) {
+                    navigateToLoginAndClearGraph()
+                }
+            }
+
             val onLogout = {
                 clearPersistedSession()
                 navigateToLoginAndClearGraph()
@@ -161,7 +167,9 @@ class MainActivity : ComponentActivity() {
                         val initialAnswers = sharedViewModel.answers.value
 
                         if (symptoms.isEmpty() || userId == -1) {
-                            LaunchedEffect(Unit) { navigateToLoginAndClearGraph() }
+                            LaunchedEffect(symptoms.isEmpty(), userId) {
+                                redirectInvalidSessionIfCurrent("clarify")
+                            }
                         } else {
                             ClarifyScreen(
                                 symptoms = symptoms,
@@ -199,7 +207,9 @@ class MainActivity : ComponentActivity() {
                     composable("result") {
                         val userId = sharedViewModel.userId.value
                         if (userId == -1) {
-                            LaunchedEffect(Unit) { navigateToLoginAndClearGraph() }
+                            LaunchedEffect(userId) {
+                                redirectInvalidSessionIfCurrent("result")
+                            }
                         } else {
                             ResultScreen(
                                 userId = userId,
