@@ -21,11 +21,9 @@ import my.diplom.aritmia.diagnosis.ComplaintOntology
 import my.diplom.aritmia.diagnosis.ComplaintTriage
 import my.diplom.aritmia.diagnosis.ComplaintTriageAssessment
 import my.diplom.aritmia.diagnosis.DiseaseAssessment
-import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
 import my.diplom.aritmia.ui.screen.SharedViewModel
-import my.diplom.aritmia.ui.screen.clarify.clarificationPromptsFor
 import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
@@ -218,23 +216,6 @@ class ResultViewModel @Inject constructor(
 
         if (existing == null) db.assessmentDao().insert(snapshot)
         else db.assessmentDao().update(snapshot)
-    }
-
-    private fun triageAnswersFor(
-        symptoms: List<String>,
-        rules: List<RuleEntity>,
-        answers: Map<String, MutableList<String>>
-    ): Map<String, String> {
-        val result = linkedMapOf<String, String>()
-        symptoms.forEach { symptom ->
-            val prompts = clarificationPromptsFor(symptom, rules)
-            val symptomAnswers = answers[symptom].orEmpty()
-            prompts.forEachIndexed { index, prompt ->
-                val answer = symptomAnswers.getOrNull(index)?.trim().orEmpty()
-                if (answer.isNotBlank()) result[prompt.id] = answer
-            }
-        }
-        return result
     }
 
     private data class SymptomClassification(
