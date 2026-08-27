@@ -1,6 +1,5 @@
 package my.diplom.aritmia.ui.screen.doctor.model
 
-import my.diplom.aritmia.data.RuleEntity
 import java.time.LocalDateTime
 
 internal val UNCHANGED_DATE_FILTER: LocalDateTime = LocalDateTime.MIN
@@ -30,7 +29,6 @@ sealed class DoctorScreenIntent {
     object ResetFilters : DoctorScreenIntent()
     object ShowFilterSheet : DoctorScreenIntent()
     object HideFilterSheet : DoctorScreenIntent()
-    data class ChangeTab(val tabIndex: Int) : DoctorScreenIntent()
 
     data class SetStatusFilter(val status: String) : DoctorScreenIntent()
     data class SetWorkflowFilter(val status: String) : DoctorScreenIntent()
@@ -40,11 +38,6 @@ sealed class DoctorScreenIntent {
     data class UpdateDoctorNote(val note: String) : DoctorScreenIntent()
     data class SaveAssessmentWorkflow(val workflowStatus: String) : DoctorScreenIntent()
 
-    object ShowRuleEditor : DoctorScreenIntent()
-    object HideRuleEditor : DoctorScreenIntent()
-    data class SelectRule(val rule: RuleEntity?) : DoctorScreenIntent()
-    data class SaveRule(val rule: RuleEntity) : DoctorScreenIntent()
-    data class DeleteRule(val rule: RuleEntity) : DoctorScreenIntent()
     object Logout : DoctorScreenIntent()
 
     // Retained while legacy SymptomEntity UI is phased out.
