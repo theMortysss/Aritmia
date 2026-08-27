@@ -219,6 +219,25 @@ private fun AssessmentQueueCard(
             item.user?.phone?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Text("Оценка: ${assessmentStatusLabel(assessment.status)}")
             Text("Работа врача: ${workflowLabel(assessment.workflowStatus)}")
+            doctorTriageLabel(assessment.triageLevel)?.let { label ->
+                Text(
+                    "Срочность: $label",
+                    fontWeight = FontWeight.Bold,
+                    color = if (assessment.triageLevel == "EMERGENCY") {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                    modifier = Modifier.testTag("doctor_triage_${assessment.id}")
+                )
+                item.triageFlags.firstOrNull()?.let { flag ->
+                    Text(
+                        flag.title,
+                        maxLines = 2,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
             Text(
                 assessment.complaints,
                 maxLines = 2,
@@ -274,6 +293,32 @@ private fun AssessmentDetailsDialog(
                 }
                 Text("Дата: ${assessment.createdAt.format(dateFormatter)}")
                 Text("Статус оценки: ${assessmentStatusLabel(assessment.status)}", fontWeight = FontWeight.Bold)
+
+                doctorTriageLabel(assessment.triageLevel)?.let { label ->
+                    HorizontalDivider()
+                    Text("Сохранённая оценка срочности", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Уровень: $label",
+                        fontWeight = FontWeight.Bold,
+                        color = if (assessment.triageLevel == "EMERGENCY") {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        }
+                    )
+                    if (item.triageFlags.isEmpty()) {
+                        Text(
+                            "Причины срочности не сохранены",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        item.triageFlags.forEach { flag ->
+                            Text(flag.title, fontWeight = FontWeight.Medium)
+                            Text(flag.message, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
 
                 HorizontalDivider()
                 Text("Исходные жалобы", fontWeight = FontWeight.Bold)
@@ -337,6 +382,9 @@ private fun AssessmentDetailsDialog(
                         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(history.assessment.createdAt.format(dateFormatter), fontWeight = FontWeight.Medium)
                             Text(assessmentStatusLabel(history.assessment.status))
+                            doctorTriageLabel(history.assessment.triageLevel)?.let { label ->
+                                Text("Срочность: $label", fontWeight = FontWeight.Medium)
+                            }
                             Text("Врач: ${workflowLabel(history.assessment.workflowStatus)}")
                             Text(history.assessment.complaints, maxLines = 2, style = MaterialTheme.typography.bodySmall)
                             history.candidates.firstOrNull()?.let {
