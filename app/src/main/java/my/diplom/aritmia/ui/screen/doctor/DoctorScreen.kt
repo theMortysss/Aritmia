@@ -258,7 +258,12 @@ private fun AssessmentQueueCard(
                     color = MaterialTheme.colorScheme.error
                 )
             }
-            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onOpen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("doctor_open_assessment_${assessment.id}")
+            ) {
                 Text("Открыть обращение")
             }
         }
@@ -469,18 +474,21 @@ private fun DoctorFilterSheet(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { onIntent(DoctorScreenIntent.ResetFilters) }) { Text("Сбросить") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    onIntent(
-                        DoctorScreenIntent.ApplyFilters(
-                            phone = phone,
-                            name = name,
-                            minProbability = 0,
-                            startDate = startDate,
-                            endDate = endDate
+                Button(
+                    onClick = {
+                        onIntent(
+                            DoctorScreenIntent.ApplyFilters(
+                                phone = phone,
+                                name = name,
+                                minProbability = 0,
+                                startDate = startDate,
+                                endDate = endDate
+                            )
                         )
-                    )
-                    onIntent(DoctorScreenIntent.HideFilterSheet)
-                }) { Text("Применить") }
+                        onIntent(DoctorScreenIntent.HideFilterSheet)
+                    },
+                    modifier = Modifier.testTag("doctor_filter_apply")
+                ) { Text("Применить") }
             }
         }
     }
