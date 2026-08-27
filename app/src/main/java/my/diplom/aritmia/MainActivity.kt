@@ -196,7 +196,9 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result")
+                                        navController.navigate("result") {
+                                            popUpTo("clarify") { inclusive = true }
+                                        }
                                     }
                                 },
                                 onLogout = onLogout
