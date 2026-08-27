@@ -2,8 +2,6 @@ package my.diplom.aritmia
 
 import android.content.Context
 import android.os.SystemClock
-import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -119,12 +117,18 @@ class PatientJourneyInstrumentedTest {
                 afterRanking.map { it.userInput }.toSet()
             )
 
-            composeRule.onNodeWithText("Назад к вводу симптомов")
-                .performScrollTo()
-                .performClick()
+            // The patient journey has two clarify/result cycles plus a follow-up screen on the
+            // back stack. Unwind those entries individually so Navigation can complete each
+            // entry's lifecycle transition before ActivityScenario tears down the Activity.
+            repeat(5) {
+                scenario.onActivity { activity ->
+                    activity.onBackPressedDispatcher.onBackPressed()
+                }
+                composeRule.waitForIdle()
+            }
             waitForText(
                 "Симптомы пока не добавлены",
-                stage = "stable symptoms screen before logout"
+                stage = "stable base symptoms screen before logout"
             )
 
             composeRule.onNodeWithText("Выйти").performClick()
@@ -135,13 +139,6 @@ class PatientJourneyInstrumentedTest {
                 stage = "clean login stack before scenario teardown"
             )
             composeRule.waitForIdle()
-
-            scenario.onActivity { activity ->
-                val content = activity.findViewById<ViewGroup>(android.R.id.content)
-                val composeView = content.getChildAt(0) as? ComposeView
-                    ?: error("Expected root ComposeView before scenario teardown")
-                composeView.disposeComposition()
-            }
         }
     }
 
