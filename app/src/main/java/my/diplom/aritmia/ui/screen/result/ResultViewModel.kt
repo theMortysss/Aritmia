@@ -16,15 +16,16 @@ import my.diplom.aritmia.data.AssessmentSnapshotCodec
 import my.diplom.aritmia.data.AssessmentWorkflow
 import my.diplom.aritmia.data.RuleEntity
 import my.diplom.aritmia.data.SymptomEntity
+import my.diplom.aritmia.diagnosis.AssessmentAttentionPolicy
 import my.diplom.aritmia.diagnosis.ComplaintOntology
 import my.diplom.aritmia.diagnosis.ComplaintTriage
 import my.diplom.aritmia.diagnosis.ComplaintTriageAssessment
-import my.diplom.aritmia.diagnosis.ComplaintTriageLevel
 import my.diplom.aritmia.diagnosis.DiseaseAssessment
 import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseNetworkRepository
 import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
 import my.diplom.aritmia.ui.screen.SharedViewModel
+import my.diplom.aritmia.ui.screen.clarify.clarificationPromptsFor
 import my.diplom.aritmia.ui.screen.clarify.hasClarificationQuestions
 import my.diplom.aritmia.ui.screen.clarify.resolveSymptomTerm
 import my.diplom.aritmia.ui.screen.result.model.ResultScreenIntent
@@ -192,9 +193,12 @@ class ResultViewModel @Inject constructor(
         triage: ComplaintTriageAssessment
     ) {
         val existing = db.assessmentDao().getBySourceSymptomId(diagnosis.id)
-        val defaultNeedsAttention =
-            assessment.status != DiseaseAssessmentStatus.RANKED || triage.level != ComplaintTriageLevel.NONE
-        val preserveDoctorWorkflow = existing != null && existing.workflowStatus != AssessmentWorkflow.NEW
+        val needsDoctorAttention = AssessmentAttentionPolicy.needsDoctorAttention(
+            existingWorkflowStatus = existing?.workflowStatus,
+            existingNeedsDoctorAttention = existing?.needsDoctorAttention,
+            assessmentStatus = assessment.status,
+            triageLevel = triage.level
+        )
 
         val snapshot = AssessmentEntity(
             id = existing?.id ?: 0,
@@ -208,16 +212,29 @@ class ResultViewModel @Inject constructor(
             extractorVersion = DiseaseNetworkRepository.EXTRACTOR_VERSION,
             createdAt = existing?.createdAt ?: diagnosis.createdAt,
             workflowStatus = existing?.workflowStatus ?: AssessmentWorkflow.NEW,
-            needsDoctorAttention = if (preserveDoctorWorkflow) {
-                existing?.needsDoctorAttention ?: defaultNeedsAttention
-            } else {
-                defaultNeedsAttention
-            },
+            needsDoctorAttention = needsDoctorAttention,
             doctorNote = existing?.doctorNote
         )
 
         if (existing == null) db.assessmentDao().insert(snapshot)
         else db.assessmentDao().update(snapshot)
+    }
+
+    private fun triageAnswersFor(
+        symptoms: List<String>,
+        rules: List<RuleEntity>,
+        answers: Map<String, MutableList<String>>
+    ): Map<String, String> {
+        val result = linkedMapOf<String, String>()
+        symptoms.forEach { symptom ->
+            val prompts = clarificationPromptsFor(symptom, rules)
+            val symptomAnswers = answers[symptom].orEmpty()
+            prompts.forEachIndexed { index, prompt ->
+                val answer = symptomAnswers.getOrNull(index)?.trim().orEmpty()
+                if (answer.isNotBlank()) result[prompt.id] = answer
+            }
+        }
+        return result
     }
 
     private data class SymptomClassification(
