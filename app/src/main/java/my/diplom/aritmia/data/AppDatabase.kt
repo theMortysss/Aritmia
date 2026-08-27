@@ -272,7 +272,7 @@ interface RuleDao {
         RuleEntity::class
     ],
     version = 10,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
