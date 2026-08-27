@@ -172,15 +172,11 @@ class PatientJourneyInstrumentedTest {
 
     private fun completeClarificationsWithoutGuessing() {
         waitForText(
-            "Не могу ответить на оставшиеся вопросы",
+            "Не могу ответить — продолжить",
             stage = "expanded clarification screen",
             timeoutMillis = 20_000
         )
-        composeRule.onNodeWithText("Не могу ответить на оставшиеся вопросы")
-            .performScrollTo()
-            .performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("Завершить")
+        composeRule.onNodeWithText("Не могу ответить — продолжить")
             .performScrollTo()
             .performClick()
     }
@@ -244,8 +240,7 @@ class PatientJourneyInstrumentedTest {
         try {
             composeRule.waitUntil(timeoutMillis) {
                 composeRule.onAllNodesWithText(text, substring = true)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
+                    .fetchSemanticsNodes().isNotEmpty()
             }
         } catch (error: Throwable) {
             throw AssertionError("Timed out during $stage waiting for text containing '$text'", error)
@@ -283,8 +278,7 @@ class PatientJourneyInstrumentedTest {
         )
         return errors.firstOrNull { message ->
             composeRule.onAllNodesWithText(message, substring = false)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+                .fetchSemanticsNodes().isNotEmpty()
         }
     }
 
