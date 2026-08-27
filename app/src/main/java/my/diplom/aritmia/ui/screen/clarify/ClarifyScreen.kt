@@ -53,6 +53,32 @@ fun ClarifyScreen(
                     .padding(padding)
                     .padding(16.dp)
             ) {
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            state.symptoms.forEach { symptom ->
+                                val prompts = clarificationPromptsFor(symptom, state.rules)
+                                val answers = state.answers[symptom].orEmpty()
+                                prompts.indices.forEach { index ->
+                                    if (answers.getOrNull(index).isNullOrBlank()) {
+                                        viewModel.onIntent(
+                                            ClarifyScreenIntent.UpdateAnswer(
+                                                symptom,
+                                                index,
+                                                "не могу ответить"
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Не могу ответить на оставшиеся вопросы")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 items(state.symptoms) { symptom ->
                     val prompts = clarificationPromptsFor(symptom, state.rules)
                     val symptomAnswers = state.answers[symptom] ?: mutableListOf()
