@@ -36,11 +36,6 @@ class DoctorScreenViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            db.ruleDao().getAllRulesFlow().collect { rules ->
-                _state.update { it.copy(rules = rules) }
-            }
-        }
-        viewModelScope.launch {
             db.assessmentDao().observeAll().collect { rows ->
                 allAssessments = rows
                 renderAssessments()
@@ -110,9 +105,6 @@ class DoctorScreenViewModel @Inject constructor(
             is DoctorScreenIntent.HideFilterSheet ->
                 _state.update { it.copy(showFilterSheet = false) }
 
-            is DoctorScreenIntent.ChangeTab ->
-                _state.update { it.copy(selectedTabIndex = intent.tabIndex) }
-
             is DoctorScreenIntent.SetStatusFilter -> {
                 _state.update { it.copy(statusFilter = intent.status) }
                 refreshRenderedAssessments()
@@ -146,24 +138,6 @@ class DoctorScreenViewModel @Inject constructor(
 
             is DoctorScreenIntent.SaveAssessmentWorkflow ->
                 saveAssessmentWorkflow(intent.workflowStatus)
-
-            is DoctorScreenIntent.ShowRuleEditor ->
-                _state.update { it.copy(showRuleEditor = true) }
-
-            is DoctorScreenIntent.HideRuleEditor ->
-                _state.update { it.copy(showRuleEditor = false) }
-
-            is DoctorScreenIntent.SelectRule ->
-                _state.update { it.copy(selectedRule = intent.rule) }
-
-            is DoctorScreenIntent.SaveRule -> viewModelScope.launch {
-                if (intent.rule.id == 0) db.ruleDao().insert(intent.rule)
-                else db.ruleDao().update(intent.rule)
-            }
-
-            is DoctorScreenIntent.DeleteRule -> viewModelScope.launch {
-                db.ruleDao().delete(intent.rule)
-            }
 
             is DoctorScreenIntent.Logout ->
                 _state.update { it.copy(logout = true) }

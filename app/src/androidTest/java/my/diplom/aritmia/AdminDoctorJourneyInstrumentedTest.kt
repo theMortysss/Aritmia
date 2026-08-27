@@ -192,6 +192,14 @@ class AdminDoctorJourneyInstrumentedTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             waitForText("Меню врача", "doctor workspace")
             waitForText(patientName, "doctor assessment queue")
+            assertTrue(
+                "Doctor workspace must not expose rule management",
+                composeRule.onAllNodesWithText("Правила").fetchSemanticsNodes().isEmpty()
+            )
+            assertTrue(
+                "Doctor workspace must not expose rule creation",
+                composeRule.onAllNodesWithText("Добавить правило").fetchSemanticsNodes().isEmpty()
+            )
 
             clickExactText("Фильтры")
             waitForText("Фильтры обращений", "doctor filters")
@@ -226,16 +234,11 @@ class AdminDoctorJourneyInstrumentedTest {
             clickExactText("Закрыть")
             composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}").performClick()
             waitForText("Текущий статус: Просмотрено", "reopened saved doctor workflow")
-
             clickExactText("Закрыть")
-            clickExactText("Правила")
-            waitForText("Добавить правило", "doctor rules workspace")
-            clickExactText("Добавить правило")
-            waitForText("Добавить правило", "doctor rule dialog")
+
             assertTrue(
-                "Legacy rule weight editor must not be available to doctor",
-                composeRule.onAllNodesWithText("Вес правила (0–100)")
-                    .fetchSemanticsNodes().isEmpty()
+                "Doctor role must remain assessment-only after workflow updates",
+                composeRule.onAllNodesWithText("Добавить правило").fetchSemanticsNodes().isEmpty()
             )
         }
     }
