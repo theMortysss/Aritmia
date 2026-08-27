@@ -70,18 +70,14 @@ class MainActivity : ComponentActivity() {
                     }
                     savedDoctorId != null -> {
                         val doctor = db.userDao().getUserByIdAndRole(savedDoctorId, Role.DOCTOR)
-                        if (doctor != null && doctor.isActive) {
-                            "doctor"
-                        } else {
+                        if (doctor != null && doctor.isActive) "doctor" else {
                             clearPersistedSession()
                             "login"
                         }
                     }
                     savedAdminId != null -> {
                         val admin = db.userDao().getUserByIdAndRole(savedAdminId, Role.ADMIN)
-                        if (admin != null && admin.isActive) {
-                            "admin"
-                        } else {
+                        if (admin != null && admin.isActive) "admin" else {
                             clearPersistedSession()
                             "login"
                         }
@@ -93,7 +89,10 @@ class MainActivity : ComponentActivity() {
             val onLogout = {
                 clearPersistedSession()
                 sharedViewModel.clearData()
-                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                navController.navigate("login") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    launchSingleTop = true
+                }
             }
 
             validatedStartDestination?.let { startDestination ->
@@ -127,11 +126,8 @@ class MainActivity : ComponentActivity() {
                         SymptomsScreen(
                             onDiagnose = { symptomList ->
                                 sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
-                                if (hasClarificationQuestions(symptomList, rules)) {
-                                    navController.navigate("clarify")
-                                } else {
-                                    navController.navigate("result")
-                                }
+                                if (hasClarificationQuestions(symptomList, rules)) navController.navigate("clarify")
+                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -148,11 +144,8 @@ class MainActivity : ComponentActivity() {
                                     symptomList,
                                     sharedViewModel.userId.value
                                 )
-                                if (hasClarificationQuestions(symptomList, rules)) {
-                                    navController.navigate("clarify")
-                                } else {
-                                    navController.navigate("result")
-                                }
+                                if (hasClarificationQuestions(symptomList, rules)) navController.navigate("clarify")
+                                else navController.navigate("result")
                             },
                             onLogout = onLogout
                         )
@@ -165,7 +158,10 @@ class MainActivity : ComponentActivity() {
 
                         if (symptoms.isEmpty() || userId == -1) {
                             LaunchedEffect(Unit) {
-                                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                                navController.navigate("login") {
+                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
                         } else {
                             ClarifyScreen(
@@ -189,14 +185,15 @@ class MainActivity : ComponentActivity() {
                                                 patientId = patient.id,
                                                 clarifyingAnswers = answers.entries
                                                     .filter { it.value.any { a -> a.isNotBlank() } }
-                                                    .joinToString(";") {
-                                                        "${it.key}=${it.value.joinToString(",")}"
-                                                    },
+                                                    .joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
                                                 nnProbability = null
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result")
+                                        navController.navigate("result") {
+                                            popUpTo("clarify") { inclusive = true }
+                                            launchSingleTop = true
+                                        }
                                     }
                                 },
                                 onLogout = onLogout
@@ -208,7 +205,10 @@ class MainActivity : ComponentActivity() {
                         val userId = sharedViewModel.userId.value
                         if (userId == -1) {
                             LaunchedEffect(Unit) {
-                                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                                navController.navigate("login") {
+                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
                         } else {
                             ResultScreen(
