@@ -168,11 +168,10 @@ class PatientJourneyInstrumentedTest {
             timeoutMillis = 20_000
         )
         composeRule.waitForIdle()
-        SystemClock.sleep(250)
-        composeRule.waitForIdle()
         composeRule.onNodeWithText("Не могу ответить — продолжить")
             .performScrollTo()
             .performClick()
+        composeRule.waitForIdle()
     }
 
     private fun registerPatient(phone: String, password: String) {
@@ -210,19 +209,21 @@ class PatientJourneyInstrumentedTest {
         stage: String,
         timeoutMillis: Long = 30_000
     ) {
-        val deadline = SystemClock.uptimeMillis() + timeoutMillis
         var latestInputs = emptyList<String>()
-        while (SystemClock.uptimeMillis() < deadline) {
-            val symptoms = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
-            latestInputs = symptoms.map { it.userInput }
-            if (symptoms.size >= expectedCount) return
-            SystemClock.sleep(50)
+        try {
+            composeRule.waitUntil(timeoutMillis) {
+                val symptoms = runBlocking { db.symptomDao().getSymptomsByPatientId(patientId) }
+                latestInputs = symptoms.map { it.userInput }
+                symptoms.size >= expectedCount
+            }
+        } catch (error: Throwable) {
+            throw AssertionError(
+                "Timed out during $stage waiting for $expectedCount persisted assessment(s). " +
+                    "Actual=${latestInputs.size}, inputs=$latestInputs, " +
+                    "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}",
+                error
+            )
         }
-        throw AssertionError(
-            "Timed out during $stage waiting for $expectedCount persisted assessment(s). " +
-                "Actual=${latestInputs.size}, inputs=$latestInputs, " +
-                "clarificationVisible=${hasExactText("Не могу ответить — продолжить")}"
-        )
     }
 
     private fun waitForAssessmentTitle(
