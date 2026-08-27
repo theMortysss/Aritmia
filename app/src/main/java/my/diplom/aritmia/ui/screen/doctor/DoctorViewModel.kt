@@ -207,21 +207,25 @@ class DoctorScreenViewModel @Inject constructor(
             .map { assessment -> buildItem(assessment, patients[assessment.patientId]) }
             .toList()
 
-        val selectedId = current.selectedAssessment?.assessment?.id
-        val selected = selectedId?.let { id ->
-            filtered.firstOrNull { it.assessment.id == id }
-                ?: allAssessments.firstOrNull { it.id == id }
-                    ?.let { buildItem(it, patients[it.patientId]) }
-        }
-        val timeline = selected?.assessment?.patientId?.let { patientId ->
-            allAssessments
-                .filter { it.patientId == patientId }
-                .sortedByDescending { it.createdAt }
-                .map { buildItem(it, patients[patientId]) }
-        }.orEmpty()
+        // Rendering can suspend while querying patients. During that suspension the doctor may
+        // open an assessment. Derive dialog selection from the latest state inside the atomic
+        // update so a stale render cannot clear a newly opened assessment before a workflow
+        // action is saved.
+        _state.update { latest ->
+            val selectedId = latest.selectedAssessment?.assessment?.id
+            val selected = selectedId?.let { id ->
+                filtered.firstOrNull { it.assessment.id == id }
+                    ?: allAssessments.firstOrNull { it.id == id }
+                        ?.let { buildItem(it, patients[it.patientId]) }
+            }
+            val timeline = selected?.assessment?.patientId?.let { patientId ->
+                allAssessments
+                    .filter { it.patientId == patientId }
+                    .sortedByDescending { it.createdAt }
+                    .map { buildItem(it, patients[patientId]) }
+            }.orEmpty()
 
-        _state.update {
-            it.copy(
+            latest.copy(
                 assessments = filtered,
                 totalCount = filtered.size,
                 selectedAssessment = selected,
