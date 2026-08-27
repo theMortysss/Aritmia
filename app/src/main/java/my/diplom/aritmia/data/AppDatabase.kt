@@ -93,7 +93,9 @@ data class AssessmentEntity(
     val createdAt: LocalDateTime = LocalDateTime.now(),
     val workflowStatus: String = AssessmentWorkflow.NEW,
     val needsDoctorAttention: Boolean = true,
-    val doctorNote: String? = null
+    val doctorNote: String? = null,
+    val triageLevel: String = "NONE",
+    val triageFlags: String? = null
 )
 
 object AssessmentWorkflow {
@@ -271,7 +273,7 @@ interface RuleDao {
         AuditEventEntity::class,
         RuleEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(RoleConverter::class, LocalDateTimeConverter::class)
@@ -339,6 +341,13 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_SymptomEntity_patientId ON SymptomEntity(patientId)")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE AssessmentEntity ADD COLUMN triageLevel TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("ALTER TABLE AssessmentEntity ADD COLUMN triageFlags TEXT")
             }
         }
     }
