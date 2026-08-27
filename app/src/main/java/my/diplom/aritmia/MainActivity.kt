@@ -146,7 +146,10 @@ class MainActivity : ComponentActivity() {
                         SymptomsScreen(
                             initialSymptoms = sharedViewModel.symptoms.value,
                             onDiagnose = { symptomList ->
-                                sharedViewModel.setData(symptomList, sharedViewModel.userId.value)
+                                sharedViewModel.updateComplaintsPreservingAnswers(
+                                    symptomList,
+                                    sharedViewModel.userId.value
+                                )
                                 val hasQuestions = symptomList.any { symptom ->
                                     rules.any { rule ->
                                         symptom.contains(rule.symptomKey, ignoreCase = true) &&
