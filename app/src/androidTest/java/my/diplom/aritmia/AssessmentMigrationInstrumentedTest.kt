@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.diplom.aritmia.data.AppDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -119,6 +120,43 @@ class AssessmentMigrationInstrumentedTest {
             }
             assertTrue(foundPatientIndex)
         }
+    }
+
+    @Test
+    fun migration10To11AddsHistoricalTriageSnapshotWithoutReclassifyingLegacyRows() {
+        val db = helper.writableDatabase
+        AppDatabase.MIGRATION_7_8.migrate(db)
+        AppDatabase.MIGRATION_8_9.migrate(db)
+        AppDatabase.MIGRATION_9_10.migrate(db)
+
+        db.execSQL("INSERT INTO User(id) VALUES (1)")
+        db.execSQL("INSERT INTO SymptomEntity(id, patientId) VALUES (1, 1)")
+        db.execSQL(
+            """
+            INSERT INTO AssessmentEntity(
+                sourceSymptomId, patientId, complaints, status, recognizedConceptIds,
+                modelCandidates, modelVersion, extractorVersion, createdAt,
+                workflowStatus, needsDoctorAttention, doctorNote
+            ) VALUES (
+                1, 1, 'legacy complaint', 'INSUFFICIENT_EVIDENCE', '[]',
+                NULL, 'legacy-model', 'legacy-extractor', '2026-08-27T12:00:00',
+                'NEW', 1, NULL
+            )
+            """.trimIndent()
+        )
+
+        AppDatabase.MIGRATION_10_11.migrate(db)
+
+        val assessmentColumns = columns(db, "AssessmentEntity")
+        assertTrue("triageLevel" in assessmentColumns)
+        assertTrue("triageFlags" in assessmentColumns)
+
+        db.query("SELECT triageLevel, triageFlags FROM AssessmentEntity WHERE sourceSymptomId = 1")
+            .use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("NONE", cursor.getString(cursor.getColumnIndexOrThrow("triageLevel")))
+                assertNull(cursor.getString(cursor.getColumnIndexOrThrow("triageFlags")))
+            }
     }
 
     private fun tableExists(db: SupportSQLiteDatabase, table: String): Boolean =
