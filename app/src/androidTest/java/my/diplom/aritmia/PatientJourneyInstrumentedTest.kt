@@ -193,24 +193,15 @@ class PatientJourneyInstrumentedTest {
             "Возможные сердечно-сосудистые состояния"
         )
         try {
-            composeRule.waitUntil(timeoutMillis) {
-                titles.any { title ->
-                    composeRule.onAllNodesWithText(title, substring = false)
-                        .fetchSemanticsNodes()
-                        .isNotEmpty()
-                }
-            }
+            composeRule.waitUntil(timeoutMillis) { titles.any(::hasExactText) }
         } catch (error: Throwable) {
             throw AssertionError(
                 "Timed out during $stage waiting for any final assessment state: $titles",
                 error
             )
         }
-        return titles.first { title ->
-            composeRule.onAllNodesWithText(title, substring = false)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        return titles.firstOrNull(::hasExactText)
+            ?: throw AssertionError("Assessment state disappeared immediately after $stage")
     }
 
     private fun waitForText(
@@ -219,11 +210,7 @@ class PatientJourneyInstrumentedTest {
         timeoutMillis: Long = 15_000
     ) {
         try {
-            composeRule.waitUntil(timeoutMillis) {
-                composeRule.onAllNodesWithText(text, substring = false)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
+            composeRule.waitUntil(timeoutMillis) { hasExactText(text) }
         } catch (error: Throwable) {
             throw AssertionError("Timed out during $stage waiting for exact text '$text'", error)
         }
@@ -235,14 +222,23 @@ class PatientJourneyInstrumentedTest {
         timeoutMillis: Long = 15_000
     ) {
         try {
-            composeRule.waitUntil(timeoutMillis) {
-                composeRule.onAllNodesWithText(text, substring = true)
-                    .fetchSemanticsNodes().isNotEmpty()
-            }
+            composeRule.waitUntil(timeoutMillis) { hasTextContaining(text) }
         } catch (error: Throwable) {
             throw AssertionError("Timed out during $stage waiting for text containing '$text'", error)
         }
     }
+
+    private fun hasExactText(text: String): Boolean = runCatching {
+        composeRule.onAllNodesWithText(text, substring = false)
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+    }.getOrDefault(false)
+
+    private fun hasTextContaining(text: String): Boolean = runCatching {
+        composeRule.onAllNodesWithText(text, substring = true)
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+    }.getOrDefault(false)
 
     private fun waitForPatientSession(
         expectedPatientId: Int? = null,
@@ -273,10 +269,7 @@ class PatientJourneyInstrumentedTest {
             "Пользователь с таким номером и ролью уже существует",
             "Неверный телефон или пароль"
         )
-        return errors.firstOrNull { message ->
-            composeRule.onAllNodesWithText(message, substring = false)
-                .fetchSemanticsNodes().isNotEmpty()
-        }
+        return errors.firstOrNull(::hasExactText)
     }
 
     private fun waitForSeedRules(db: AppDatabase) = runBlocking {
