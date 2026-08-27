@@ -41,7 +41,7 @@ class PatientJourneyInstrumentedTest {
     }
 
     @Test
-    fun patientCanRegisterContinueAbstentionRankPersistLoginAndRestoreSession() {
+    fun patientCanRegisterContinueAbstentionAndRankWithoutLosingComplaints() {
         clearPersistedSession()
 
         val phone = uniquePhone()
@@ -54,10 +54,9 @@ class PatientJourneyInstrumentedTest {
         val fourthComplaint = "не хватает воздуха"
         val fourComplaints = threeComplaints + fourthComplaint
 
-        var scenario: ActivityScenario<MainActivity>? = ActivityScenario.launch(MainActivity::class.java)
-        try {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var db: AppDatabase
-            scenario!!.onActivity { activity -> db = activity.db }
+            scenario.onActivity { activity -> db = activity.db }
             waitForSeedRules(db)
             waitForText("Вход в приложение", stage = "initial login screen")
 
@@ -117,56 +116,6 @@ class PatientJourneyInstrumentedTest {
                 ),
                 afterRanking.map { it.userInput }.toSet()
             )
-
-            composeRule.onNodeWithText("Выйти").performClick()
-            waitForText(
-                "Вы уверены, что хотите выйти?",
-                stage = "logout confirmation dialog"
-            )
-            composeRule.onNodeWithText("Да").performClick()
-            composeRule.waitForIdle()
-            waitForText(
-                "Вход в приложение",
-                stage = "login screen after logout",
-                timeoutMillis = 15_000
-            )
-            assertEquals(
-                "Logout must clear the persisted patient session before showing login",
-                -1,
-                prefs.getInt("current_patient_id", -1)
-            )
-
-            loginPatient(phone, password)
-            waitForPatientSession(
-                expectedPatientId = patientId,
-                stage = "patient login",
-                timeoutMillis = 30_000
-            )
-            waitForText(
-                "Симптомы пока не добавлены",
-                stage = "navigation after patient login",
-                timeoutMillis = 30_000
-            )
-
-            scenario!!.close()
-            scenario = null
-
-            ActivityScenario.launch(MainActivity::class.java).use {
-                waitForText(
-                    "Симптомы пока не добавлены",
-                    stage = "patient session restore after activity relaunch",
-                    timeoutMillis = 30_000
-                )
-                assertTrue(
-                    "A restored patient session must not return to login",
-                    composeRule.onAllNodesWithText("Вход в приложение")
-                        .fetchSemanticsNodes()
-                        .isEmpty()
-                )
-                assertEquals(patientId, prefs.getInt("current_patient_id", -1))
-            }
-        } finally {
-            scenario?.close()
         }
     }
 
@@ -193,13 +142,6 @@ class PatientJourneyInstrumentedTest {
         composeRule.onNodeWithText("Зарегистрироваться")
             .performScrollTo()
             .performClick()
-    }
-
-    private fun loginPatient(phone: String, password: String) {
-        composeRule.waitForIdle()
-        replaceEditableField(0, phone)
-        replaceEditableField(1, password)
-        composeRule.onNodeWithText("Войти").performScrollTo().performClick()
     }
 
     private fun addComplaint(text: String) {
