@@ -75,12 +75,13 @@ class PatientJourneyInstrumentedTest {
 
             threeComplaints.forEach(::addComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
+            completeClarificationsWithoutGuessing()
             waitForText(
                 "Недостаточно признаков для ранжирования заболеваний",
                 stage = "three-concept abstention result"
             )
             waitForTextContaining(
-                "Распознано сердечно-сосудистых признаков: 3.",
+                "Распознано признаков, входящих в текущую модель: 3.",
                 stage = "three-concept evidence count"
             )
 
@@ -97,6 +98,7 @@ class PatientJourneyInstrumentedTest {
 
             addComplaint(fourthComplaint)
             composeRule.onNodeWithText("Диагностировать").performClick()
+            completeClarificationsWithoutGuessing()
             waitForText(
                 "Возможные сердечно-сосудистые состояния",
                 stage = "four-concept ranked result"
@@ -166,6 +168,21 @@ class PatientJourneyInstrumentedTest {
         } finally {
             scenario?.close()
         }
+    }
+
+    private fun completeClarificationsWithoutGuessing() {
+        waitForText(
+            "Не могу ответить на оставшиеся вопросы",
+            stage = "expanded clarification screen",
+            timeoutMillis = 20_000
+        )
+        composeRule.onNodeWithText("Не могу ответить на оставшиеся вопросы")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Завершить")
+            .performScrollTo()
+            .performClick()
     }
 
     private fun registerPatient(phone: String, password: String) {
