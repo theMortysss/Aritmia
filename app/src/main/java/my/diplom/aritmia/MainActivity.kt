@@ -93,7 +93,10 @@ class MainActivity : ComponentActivity() {
             val onLogout = {
                 clearPersistedSession()
                 sharedViewModel.clearData()
-                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                navController.navigate("login") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    launchSingleTop = true
+                }
             }
 
             validatedStartDestination?.let { startDestination ->
@@ -165,7 +168,10 @@ class MainActivity : ComponentActivity() {
 
                         if (symptoms.isEmpty() || userId == -1) {
                             LaunchedEffect(Unit) {
-                                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                                navController.navigate("login") {
+                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
                         } else {
                             ClarifyScreen(
@@ -196,7 +202,10 @@ class MainActivity : ComponentActivity() {
                                             )
                                         )
                                         sharedViewModel.updateAnswers(answers)
-                                        navController.navigate("result")
+                                        navController.navigate("result") {
+                                            popUpTo("clarify") { inclusive = true }
+                                            launchSingleTop = true
+                                        }
                                     }
                                 },
                                 onLogout = onLogout
@@ -208,7 +217,10 @@ class MainActivity : ComponentActivity() {
                         val userId = sharedViewModel.userId.value
                         if (userId == -1) {
                             LaunchedEffect(Unit) {
-                                navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                                navController.navigate("login") {
+                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
                         } else {
                             ResultScreen(
