@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.diplom.aritmia.data.AppDatabase
 import my.diplom.aritmia.data.RuleEntity
+import my.diplom.aritmia.diagnosis.ComplaintOntology
+import my.diplom.aritmia.diagnosis.FreeTextSymptomExtractor
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenIntent
 import my.diplom.aritmia.ui.screen.clarify.model.ClarifyScreenState
 import javax.inject.Inject
@@ -72,7 +74,14 @@ fun resolveSymptomTerm(
     answers: Map<String, List<String>>
 ): SymptomTermResult {
     val rule = rules.find { symptom.contains(it.symptomKey, ignoreCase = true) }
-        ?: return SymptomTermResult(symptom, null)
+    if (rule == null) {
+        val ontologyTerm = FreeTextSymptomExtractor.extract(listOf(symptom)).conceptIds
+            .mapNotNull { ComplaintOntology.concept(it)?.label }
+            .distinct()
+            .joinToString(" / ")
+            .ifBlank { null }
+        return SymptomTermResult(symptom, ontologyTerm)
+    }
 
     var medicalTerm = rule.medicalTerm
     rule.clarifyingQuestions
