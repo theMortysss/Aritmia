@@ -339,11 +339,13 @@ private fun AssessmentDetailsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3
                 )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(AssessmentWorkflow.values.toList()) { workflow ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AssessmentWorkflow.values.forEach { workflow ->
                         Button(
                             onClick = { onSaveWorkflow(workflow) },
-                            modifier = Modifier.testTag("doctor_workflow_$workflow")
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("doctor_workflow_$workflow")
                         ) {
                             Text(workflowLabel(workflow))
                         }
