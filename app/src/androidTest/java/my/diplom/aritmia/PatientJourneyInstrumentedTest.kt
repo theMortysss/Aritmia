@@ -116,6 +116,15 @@ class PatientJourneyInstrumentedTest {
                 ),
                 afterRanking.map { it.userInput }.toSet()
             )
+
+            composeRule.onNodeWithText("Назад к вводу симптомов")
+                .performScrollTo()
+                .performClick()
+            waitForText(
+                "Симптомы пока не добавлены",
+                stage = "stable symptoms screen before scenario teardown"
+            )
+            composeRule.waitForIdle()
         }
     }
 
