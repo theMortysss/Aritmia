@@ -22,6 +22,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import my.diplom.aritmia.diagnosis.DiseaseAssessmentStatus
 import my.diplom.aritmia.diagnosis.DiseaseCandidate
 import my.diplom.aritmia.ui.composable.TopBar
@@ -49,13 +51,19 @@ fun ResultScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(state.navigateToClarify, state.navigateBack) {
-        if (state.navigateToClarify) navController.navigate("clarify")
-        if (state.navigateBack) {
-            onBack()
-            viewModel.onIntent(ResultScreenIntent.ResetNavigation)
+        withContext(Dispatchers.Main.immediate) {
+            if (state.navigateToClarify) navController.navigate("clarify")
+            if (state.navigateBack) {
+                onBack()
+                viewModel.onIntent(ResultScreenIntent.ResetNavigation)
+            }
         }
     }
-    LaunchedEffect(state.logout) { if (state.logout) onLogout() }
+    LaunchedEffect(state.logout) {
+        if (state.logout) {
+            withContext(Dispatchers.Main.immediate) { onLogout() }
+        }
+    }
 
     Scaffold(topBar = { TopBar(onLogout = { viewModel.onIntent(ResultScreenIntent.Logout) }) }) { padding ->
         Column(
