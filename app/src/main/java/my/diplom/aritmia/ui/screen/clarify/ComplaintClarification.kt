@@ -11,10 +11,9 @@ data class ClarificationPrompt(
 )
 
 /**
- * Admin rules are explicit overrides. If a matching rule contains clarification
- * questions, preserve its existing behavior. Otherwise fall back to stable concept-level
- * prompts from ComplaintOntology, so different Russian aliases of the same complaint
- * receive the same clarification flow.
+ * Legacy/admin rule questions stay first so existing answerTriggers keep their historical
+ * indices. Stable ontology questions are appended rather than replaced: an editable rule must
+ * never be able to suppress safety/triage context such as exertional syncope or extreme BP.
  */
 fun clarificationPromptsFor(
     symptom: String,
@@ -27,7 +26,7 @@ fun clarificationPromptsFor(
         ?.filter { it.isNotBlank() }
         .orEmpty()
 
-    if (rule != null && ruleQuestions.isNotEmpty()) {
+    val rulePrompts = if (rule != null && ruleQuestions.isNotEmpty()) {
         val triggerOptions = rule.answerTriggers
             ?.split(";")
             ?.mapNotNull { trigger -> trigger.substringBefore("=", missingDelimiterValue = "").trim() }
@@ -36,17 +35,19 @@ fun clarificationPromptsFor(
             .orEmpty()
             .ifEmpty { listOf("да", "нет") }
         val options = (triggerOptions + "не могу ответить").distinct()
-        return ruleQuestions.mapIndexed { index, question ->
+        ruleQuestions.mapIndexed { index, question ->
             ClarificationPrompt(
                 id = "rule:${rule.id}:$index",
                 text = question,
                 options = options
             )
         }
+    } else {
+        emptyList()
     }
 
     val extraction = FreeTextSymptomExtractor.extract(listOf(symptom))
-    return extraction.conceptIds
+    val conceptPrompts = extraction.conceptIds
         .mapNotNull(ComplaintOntology::concept)
         .flatMap { concept ->
             concept.clarifyingQuestions.map { question ->
@@ -57,7 +58,8 @@ fun clarificationPromptsFor(
                 )
             }
         }
-        .distinctBy { it.id }
+
+    return (rulePrompts + conceptPrompts).distinctBy { it.id }
 }
 
 fun hasClarificationQuestions(
