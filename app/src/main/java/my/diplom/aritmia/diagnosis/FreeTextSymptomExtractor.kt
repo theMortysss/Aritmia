@@ -24,7 +24,11 @@ object FreeTextSymptomExtractor {
         val matched = linkedMapOf<String, MutableList<String>>()
 
         ComplaintOntology.concepts.forEach { concept ->
-            val aliases = (concept.aliases + concept.label).map(::normalize)
+            val aliases = (concept.aliases + concept.label)
+                // A bare "температура" can describe a normal measurement such as 36.6.
+                // Require a fever-specific phrase instead of manufacturing a symptom.
+                .filterNot { concept.id == "fever" && normalize(it) == "температура" }
+                .map(::normalize)
             normalizedInputs.forEach { input ->
                 aliases.forEach { alias ->
                     if (matches(input, alias) && !isNegated(input, alias)) {
@@ -191,7 +195,7 @@ object FreeTextSymptomExtractor {
         // negated word to belong to the matched alias keeps positive forms such as
         // "не хватает воздуха" intact and avoids suppressing unrelated nearby symptoms.
         val directlyNegatableAliasWords = setOf(
-            "редк", "част", "высок", "низк", "понижен",
+            "редк", "част", "высок", "низк", "понижен", "пониженн",
             "потерял", "потеряла", "терял", "теряла",
             "трудно", "усиливается"
         )
