@@ -227,15 +227,14 @@ object ComplaintTriage {
         }
 
         if ("low_bp" in concepts) {
-            val lowReading = answerEquals(answers, "low_bp", "measured_bp", "ниже 90/60")
             val symptomaticAnswer = answerIsYes(answers, "low_bp", "symptomatic")
             val concerning = concepts.any { it in hypotensionSymptoms }
-            if ((lowReading && symptomaticAnswer) || (lowReading && concerning)) {
+            if (symptomaticAnswer || concerning) {
                 flags += ComplaintTriageFlag(
                     id = "symptomatic_hypotension",
                     level = ComplaintTriageLevel.MEDICAL_REVIEW,
                     title = "Низкое давление сопровождается симптомами",
-                    message = "Показатель ниже 90/60 сам по себе не всегда опасен, но вместе с головокружением, обмороком, спутанностью, нарушением зрения, слабостью или сердцебиением требует медицинской оценки.",
+                    message = "Низкое давление само по себе не всегда опасно, но вместе с головокружением, обмороком, спутанностью, нарушением зрения, выраженной слабостью или сердцебиением требует медицинской оценки. Значение ниже 90/60 — один из ориентиров, но отсутствие точной цифры не отменяет оценку симптомов.",
                     matchedConceptIds = concepts.intersect(hypotensionSymptoms) + "low_bp"
                 )
             }
