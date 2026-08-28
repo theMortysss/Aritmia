@@ -88,7 +88,7 @@ class PatientDoctorEmergencyJourneyInstrumentedTest {
             )
 
             addComplaint(complaint)
-            clickExactText("Диагностировать")
+            clickExactText("Диагностировать", scrollTo = true)
             completeClarificationsWithoutGuessing()
 
             waitForText(
@@ -127,7 +127,9 @@ class PatientDoctorEmergencyJourneyInstrumentedTest {
             waitForText("Срочность: Экстренная оценка", "saved emergency level in doctor queue")
             waitForText(aorticFlagTitle, "saved emergency reason in doctor queue")
 
-            composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}").performClick()
+            val openAssessment = composeRule.onNodeWithTag("doctor_open_assessment_${assessment.id}")
+            if (!openAssessment.isDisplayed()) openAssessment.performScrollTo()
+            openAssessment.performClick()
             waitForText("Обращение пациента", "doctor assessment details")
             waitForText("Сохранённая оценка срочности", "persisted triage section")
             waitForText("Уровень: Экстренная оценка", "persisted emergency level")
@@ -185,16 +187,16 @@ class PatientDoctorEmergencyJourneyInstrumentedTest {
         clickExactText("Регистрация")
         composeRule.waitForIdle()
 
-        replaceEditableField(0, fullName)
-        replaceEditableField(1, phone)
-        replaceEditableField(3, "42")
-        replaceEditableField(4, password)
+        replaceEditableField(0, fullName, scrollTo = true)
+        replaceEditableField(1, phone, scrollTo = true)
+        replaceEditableField(3, "42", scrollTo = true)
+        replaceEditableField(4, password, scrollTo = true)
         clickExactText("Зарегистрироваться", scrollTo = true)
     }
 
     private fun loginDoctor(phone: String, password: String) {
-        replaceEditableField(0, phone)
-        replaceEditableField(1, password)
+        replaceEditableField(0, phone, scrollTo = true)
+        replaceEditableField(1, password, scrollTo = true)
         clickExactText("Врач", scrollTo = true)
         clickExactText("Войти", scrollTo = true)
     }
