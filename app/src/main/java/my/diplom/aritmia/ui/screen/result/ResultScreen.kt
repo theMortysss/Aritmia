@@ -150,7 +150,9 @@ fun ResultScreen(
                                 expanded = text.isNotBlank()
                             },
                             label = { Text("Уточнённый симптом") },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                             trailingIcon = {
                                 if (state.editedSymptom.isNotBlank()) {
                                     ExposedDropdownMenuDefaults.TrailingIcon(
