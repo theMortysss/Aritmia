@@ -24,7 +24,7 @@ data class ComplaintTriageAssessment(
 /**
  * Conservative, deterministic urgency layer independent from disease ranking.
  *
- * Sources used to define the initial rules:
+ * Sources used to define the rules:
  * - 2021 AHA/ACC Chest Pain Guideline: acute chest pain/equivalent symptoms require
  *   immediate medical evaluation; equivalents include pressure/tightness, arm/jaw/back
  *   discomfort, shortness of breath and fatigue.
@@ -36,6 +36,10 @@ data class ComplaintTriageAssessment(
  *   warrants medical assessment.
  * - 2018 ESC Syncope Guideline: exertional/supine syncope or syncope immediately after
  *   palpitations are high-risk features requiring prompt clinical evaluation.
+ * - 2022 ACC/AHA Aortic Disease Guideline: abrupt-onset severe chest, back or abdominal
+ *   pain is a high-risk pain feature for acute aortic syndrome and needs urgent evaluation.
+ * - American Heart Association pulmonary-embolism guidance: sudden unexplained dyspnea,
+ *   pleuritic chest pain, hemoptysis and syncope are warning features requiring prompt care.
  *
  * This object does not diagnose disease and never modifies the pretrained MLP input.
  */
@@ -50,6 +54,8 @@ object ComplaintTriage {
     )
 
     private val chestConcepts = setOf("chest_pain", "chest_pressure", "chest_tightness")
+    private val acuteAorticPainConcepts = setOf("back_pain", "abdominal_pain")
+    private val pulmonaryEmbolismCompanionConcepts = setOf("hemoptysis", "pleuritic_pain", "syncope")
 
     private val hypertensiveEmergencySymptoms = setOf(
         "chest_pain",
@@ -87,7 +93,9 @@ object ComplaintTriage {
 
         addStrokeFlags(complaints, concepts, clarificationAnswers, flags)
         addChestFlags(complaints, concepts, clarificationAnswers, flags)
-        addDyspneaFlags(concepts, clarificationAnswers, flags)
+        addAorticFlags(complaints, concepts, clarificationAnswers, flags)
+        addDyspneaFlags(complaints, concepts, clarificationAnswers, flags)
+        addHemoptysisFlags(concepts, flags)
         addBloodPressureFlags(concepts, clarificationAnswers, flags)
         addSyncopeFlags(complaints, concepts, clarificationAnswers, flags)
 
@@ -172,15 +180,60 @@ object ComplaintTriage {
         }
     }
 
+    private fun addAorticFlags(
+        complaints: List<String>,
+        concepts: Set<String>,
+        answers: Map<String, String>,
+        flags: MutableList<ComplaintTriageFlag>
+    ) {
+        val present = concepts.intersect(acuteAorticPainConcepts)
+        if (present.isEmpty()) return
+
+        val suddenSevereFromAnswer = present.any { conceptId ->
+            answerIsYes(answers, conceptId, "sudden_severe")
+        }
+        val suddenSevereFromText = complaints.any { complaint ->
+            val local = FreeTextSymptomExtractor.extract(listOf(complaint)).conceptIds
+            local.any { it in acuteAorticPainConcepts } && hasSuddenSeverePainMarker(complaint)
+        }
+
+        if (suddenSevereFromAnswer || suddenSevereFromText) {
+            flags += ComplaintTriageFlag(
+                id = "acute_aortic_pain_pattern",
+                level = ComplaintTriageLevel.EMERGENCY,
+                title = "Внезапная сильная боль в спине или животе требует срочной оценки",
+                message = "Внезапная боль в спине или животе, которая сразу была сильной, относится к признакам, при которых нужно срочно исключить острое заболевание аорты и другие опасные причины. Нужна экстренная медицинская оценка; приложение не определяет причину боли.",
+                matchedConceptIds = present
+            )
+        }
+    }
+
     private fun addDyspneaFlags(
+        complaints: List<String>,
         concepts: Set<String>,
         answers: Map<String, String>,
         flags: MutableList<ComplaintTriageFlag>
     ) {
         if ("dyspnea" !in concepts) return
-        val sudden = answerIsYes(answers, "dyspnea", "sudden_onset")
+
+        val suddenFromAnswer = answerIsYes(answers, "dyspnea", "sudden_onset")
+        val suddenFromText = complaints.any { complaint ->
+            val local = FreeTextSymptomExtractor.extract(listOf(complaint)).conceptIds
+            "dyspnea" in local && hasSuddenMarker(complaint)
+        }
+        val sudden = suddenFromAnswer || suddenFromText
         val atRest = answerIsYes(answers, "dyspnea", "at_rest")
-        if (sudden && atRest) {
+        val peCompanions = concepts.intersect(pulmonaryEmbolismCompanionConcepts)
+
+        if (sudden && peCompanions.isNotEmpty()) {
+            flags += ComplaintTriageFlag(
+                id = "pulmonary_embolism_warning_pattern",
+                level = ComplaintTriageLevel.EMERGENCY,
+                title = "Внезапная одышка с дополнительным опасным признаком",
+                message = "Внезапная нехватка воздуха вместе с болью при дыхании, кровью в мокроте или обмороком требует экстренной медицинской оценки. Такое сочетание встречается при опасных состояниях, включая тромбоэмболию лёгочной артерии; это правило срочности, а не диагноз.",
+                matchedConceptIds = peCompanions + "dyspnea"
+            )
+        } else if (sudden && atRest) {
             flags += ComplaintTriageFlag(
                 id = "sudden_dyspnea_at_rest",
                 level = ComplaintTriageLevel.EMERGENCY,
@@ -197,6 +250,22 @@ object ComplaintTriage {
                 matchedConceptIds = setOf("dyspnea")
             )
         }
+    }
+
+    private fun addHemoptysisFlags(
+        concepts: Set<String>,
+        flags: MutableList<ComplaintTriageFlag>
+    ) {
+        if ("hemoptysis" !in concepts) return
+        if (flags.any { it.id == "pulmonary_embolism_warning_pattern" }) return
+
+        flags += ComplaintTriageFlag(
+            id = "hemoptysis_review",
+            level = ComplaintTriageLevel.MEDICAL_REVIEW,
+            title = "Кровь в мокроте требует медицинской оценки",
+            message = "Кровохарканье имеет разные причины и требует медицинской оценки. Если одновременно появилась внезапная одышка, боль при дыхании, обморок или резкое ухудшение состояния — обращайтесь за экстренной помощью.",
+            matchedConceptIds = setOf("hemoptysis")
+        )
     }
 
     private fun addBloodPressureFlags(
@@ -289,7 +358,23 @@ object ComplaintTriage {
 
     private fun hasSuddenMarker(value: String): Boolean {
         val normalized = normalize(value)
-        return listOf("внезапно", "резко", "неожиданно", "только что").any(normalized::contains)
+        return listOf("внезапно", "резко", "неожиданно", "только что", "вдруг").any(normalized::contains)
+    }
+
+    private fun hasSuddenSeverePainMarker(value: String): Boolean {
+        val normalized = normalize(value)
+        val sudden = listOf("внезапно", "неожиданно", "только что", "вдруг").any(normalized::contains)
+        val severe = listOf(
+            "сильная боль",
+            "сильные боли",
+            "очень сильн",
+            "резкая боль",
+            "нестерпим",
+            "кинжальн",
+            "разрывающ",
+            "максимальн"
+        ).any(normalized::contains)
+        return sudden && severe
     }
 
     private fun hasAcuteChestMarker(value: String): Boolean {
