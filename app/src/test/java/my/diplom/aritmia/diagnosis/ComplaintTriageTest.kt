@@ -26,6 +26,73 @@ class ComplaintTriageTest {
     }
 
     @Test
+    fun suddenSevereBackPainTextIsEmergency() {
+        val result = ComplaintTriage.assess(listOf("Внезапно сильная боль в спине"))
+
+        assertEquals(ComplaintTriageLevel.EMERGENCY, result.level)
+        assertTrue(result.flags.any { it.id == "acute_aortic_pain_pattern" })
+    }
+
+    @Test
+    fun suddenSevereAbdominalPainClarificationIsEmergency() {
+        val result = ComplaintTriage.assess(
+            complaints = listOf("Боль в животе"),
+            clarificationAnswers = mapOf(
+                "concept:abdominal_pain:sudden_severe" to "да"
+            )
+        )
+
+        assertEquals(ComplaintTriageLevel.EMERGENCY, result.level)
+        assertTrue(result.flags.any { it.id == "acute_aortic_pain_pattern" })
+    }
+
+    @Test
+    fun ordinaryBackPainDoesNotCreateAorticEmergency() {
+        val result = ComplaintTriage.assess(listOf("Болит спина"))
+
+        assertEquals(ComplaintTriageLevel.NONE, result.level)
+        assertTrue(result.flags.none { it.id == "acute_aortic_pain_pattern" })
+    }
+
+    @Test
+    fun suddenDyspneaWithHemoptysisIsEmergency() {
+        val result = ComplaintTriage.assess(
+            listOf("Внезапно не хватает воздуха", "Кровь в мокроте")
+        )
+
+        assertEquals(ComplaintTriageLevel.EMERGENCY, result.level)
+        assertTrue(result.flags.any { it.id == "pulmonary_embolism_warning_pattern" })
+    }
+
+    @Test
+    fun suddenDyspneaWithPleuriticPainIsEmergency() {
+        val result = ComplaintTriage.assess(
+            listOf("Внезапно не хватает воздуха", "Боль при вдохе")
+        )
+
+        assertEquals(ComplaintTriageLevel.EMERGENCY, result.level)
+        assertTrue(result.flags.any { it.id == "pulmonary_embolism_warning_pattern" })
+    }
+
+    @Test
+    fun hemoptysisAloneRequiresReviewNotEmergency() {
+        val result = ComplaintTriage.assess(listOf("Кровь в мокроте"))
+
+        assertEquals(ComplaintTriageLevel.MEDICAL_REVIEW, result.level)
+        assertTrue(result.flags.any { it.id == "hemoptysis_review" })
+        assertTrue(result.flags.none { it.level == ComplaintTriageLevel.EMERGENCY })
+    }
+
+    @Test
+    fun suddenDyspneaWithoutPeCompanionRemainsReview() {
+        val result = ComplaintTriage.assess(listOf("Внезапно не хватает воздуха"))
+
+        assertEquals(ComplaintTriageLevel.MEDICAL_REVIEW, result.level)
+        assertTrue(result.flags.any { it.id == "dyspnea_review" })
+        assertTrue(result.flags.none { it.id == "pulmonary_embolism_warning_pattern" })
+    }
+
+    @Test
     fun lowBloodPressureAloneIsNotAutomaticallyEmergency() {
         val result = ComplaintTriage.assess(listOf("Низкое давление"))
 
