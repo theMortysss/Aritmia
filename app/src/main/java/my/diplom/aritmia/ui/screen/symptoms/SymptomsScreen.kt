@@ -96,7 +96,7 @@ fun SymptomsScreen(
                         label = { Text("Введите симптом") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(MenuAnchorType.PrimaryEditable)
                             .background(Color.Transparent),
                         shape = RoundedCornerShape(8.dp),
                         trailingIcon = {

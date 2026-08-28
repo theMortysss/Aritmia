@@ -11,7 +11,7 @@ import my.diplom.aritmia.ui.screen.clarify.clarificationPromptsFor
 fun triageAnswersFor(
     symptoms: List<String>,
     rules: List<RuleEntity>,
-    storedAnswers: Map<String, out List<String>>
+    storedAnswers: Map<String, List<String>>
 ): Map<String, String> = buildMap {
     symptoms.forEach { symptom ->
         val answers = storedAnswers[symptom].orEmpty()
