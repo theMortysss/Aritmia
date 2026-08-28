@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -218,9 +219,9 @@ class AdminDoctorJourneyInstrumentedTest {
                 "Пациенту рекомендована очная консультация",
                 scrollTo = true
             )
-            composeRule.onNodeWithTag("doctor_workflow_REVIEWED")
-                .performScrollTo()
-                .performClick()
+            val reviewedWorkflow = composeRule.onNodeWithTag("doctor_workflow_REVIEWED")
+            if (!reviewedWorkflow.isDisplayed()) reviewedWorkflow.performScrollTo()
+            reviewedWorkflow.performClick()
 
             waitForWorkflow(assessment.id, AssessmentWorkflow.REVIEWED)
             val updated = runBlocking { db.assessmentDao().getById(assessment.id) }!!
@@ -292,7 +293,7 @@ class AdminDoctorJourneyInstrumentedTest {
         val count = nodes.fetchSemanticsNodes().size
         check(count > 0) { "No clickable node found with exact text '$text'" }
         val node = nodes[count - 1]
-        if (scrollTo) node.performScrollTo()
+        if (scrollTo && !node.isDisplayed()) node.performScrollTo()
         node.performClick()
     }
 
@@ -302,7 +303,7 @@ class AdminDoctorJourneyInstrumentedTest {
         scrollTo: Boolean = false
     ) {
         val node = composeRule.onAllNodes(hasSetTextAction())[index]
-        if (scrollTo) node.performScrollTo()
+        if (scrollTo && !node.isDisplayed()) node.performScrollTo()
         node.performTextReplacement(value)
     }
 
