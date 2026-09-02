@@ -349,7 +349,9 @@ object ComplaintOntology {
         if (normalizedQuery.isBlank()) return emptyList()
 
         return concepts
-            .flatMap { concept -> concept.aliases + concept.label }
+            //            .flatMap { concept -> concept.aliases + concept.label }
+            .asSequence()
+            .map { concept -> concept.label }
             .distinct()
             .filter { normalizeForSearch(it).contains(normalizedQuery) }
             .sortedWith(
@@ -358,6 +360,7 @@ object ComplaintOntology {
                     .thenBy { it }
             )
             .take(limit.coerceAtLeast(0))
+            .toList()
     }
 
     private fun normalizeForSearch(value: String): String = value

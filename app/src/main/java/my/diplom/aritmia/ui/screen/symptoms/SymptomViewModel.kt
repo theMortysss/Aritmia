@@ -22,7 +22,6 @@ import my.diplom.aritmia.ui.screen.symptoms.model.SymptomsScreenState
 import java.time.LocalDateTime
 import javax.inject.Inject
 
-@RequiresApi(Build.VERSION_CODES.O)
 @HiltViewModel
 class SymptomsViewModel @Inject constructor(
     private val db: AppDatabase,
@@ -51,9 +50,8 @@ class SymptomsViewModel @Inject constructor(
                     val ruleSuggestions = _state.value.rules
                         .map { it.symptomKey }
                         .filter { it.contains(intent.newSymptom, ignoreCase = true) }
-                        .distinct()
                         .sorted()
-                    (ontologySuggestions + ruleSuggestions).distinct().take(12)
+                    (ontologySuggestions + ruleSuggestions).distinctBy { normalizeSymptom(it) }.take(12)
                 } else emptyList()
                 _state.update { it.copy(newSymptom = intent.newSymptom, suggestions = suggestions) }
             }
@@ -163,4 +161,9 @@ class SymptomsViewModel @Inject constructor(
             )
         }
     }
+
+    private fun normalizeSymptom(value: String): String =
+        value.trim()
+            .replace(Regex("\\s+"), " ")
+            .lowercase()
 }

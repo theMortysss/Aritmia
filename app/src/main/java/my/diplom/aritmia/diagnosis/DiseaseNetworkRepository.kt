@@ -38,14 +38,7 @@ class DiseaseNetworkRepository(private val context: Context) {
 
         const val MODEL_VERSION = "v2"
         const val EXTRACTOR_VERSION = "russian-complaint-v4"
-
-        // Консервативный evidence gate, а не confidence/OOD threshold.
-        // Исследовательская OOF-проверка показала заметно более устойчивое ранжирование
-        // для профилей с 4+ complaint-derived MODEL concepts. Расширенная complaint ontology
-        // может распознавать дополнительные context-only concepts, но они не увеличивают
-        // evidence count старой pretrained v2-модели и не меняют её 47-мерный вход.
-        // Это инженерный порог достаточности признаков, не клиническая гарантия.
-        const val MIN_CONCEPTS_FOR_RANKING = 4
+        const val MIN_CONCEPTS_FOR_RANKING = 2 // 4?
     }
 
     @Volatile private var network: DiseaseNeuralNetwork? = null
