@@ -344,23 +344,125 @@ object ComplaintOntology {
         complaintConceptIds.mapNotNullTo(linkedSetOf()) { id -> byId[id]?.modelConceptId }
 
     /** Suggestions intentionally contain natural complaint phrases, not disease names. */
+//    fun suggestions(query: String, limit: Int = 12): List<String> {
+//        val normalizedQuery = normalizeForSearch(query)
+//        if (normalizedQuery.isBlank()) return emptyList()
+//
+//        return concepts
+//            //            .flatMap { concept -> concept.aliases + concept.label }
+//            .asSequence()
+//            .map { concept -> concept.label }
+//            .distinct()
+//            .filter { normalizeForSearch(it).contains(normalizedQuery) }
+//            .sortedWith(
+//                compareByDescending<String> { normalizeForSearch(it).startsWith(normalizedQuery) }
+//                    .thenBy { it.length }
+//                    .thenBy { it }
+//            )
+//            .take(limit.coerceAtLeast(0))
+//            .toList()
+//    }
     fun suggestions(query: String, limit: Int = 12): List<String> {
         val normalizedQuery = normalizeForSearch(query)
+
         if (normalizedQuery.isBlank()) return emptyList()
 
+        val queryWords = normalizedQuery
+            .split(" ")
+            .filter { it.isNotBlank() }
+
         return concepts
-            //            .flatMap { concept -> concept.aliases + concept.label }
             .asSequence()
-            .map { concept -> concept.label }
-            .distinct()
-            .filter { normalizeForSearch(it).contains(normalizedQuery) }
+            .map { concept ->
+                val phrases = (listOf(concept.label) + concept.aliases)
+                    .distinct()
+
+                val bestScore = phrases.maxOfOrNull { phrase ->
+                    suggestionScore(
+                        query = normalizedQuery,
+                        queryWords = queryWords,
+                        candidate = normalizeForSearch(phrase)
+                    )
+                } ?: 0
+
+                concept to bestScore
+            }
+            .filter { (_, score) -> score > 0 }
             .sortedWith(
-                compareByDescending<String> { normalizeForSearch(it).startsWith(normalizedQuery) }
-                    .thenBy { it.length }
-                    .thenBy { it }
+                compareByDescending<Pair<ComplaintConcept, Int>> { it.second }
+                    .thenBy { it.first.label.length }
+                    .thenBy { it.first.label }
             )
             .take(limit.coerceAtLeast(0))
+            .map { (concept, _) -> concept.label }
+            .distinct()
             .toList()
+    }
+
+    private fun suggestionScore(
+        query: String,
+        queryWords: List<String>,
+        candidate: String
+    ): Int {
+        if (candidate.isBlank()) return 0
+
+        // Полное совпадение
+        if (candidate == query) {
+            return 1000
+        }
+
+        var score = 0
+
+        // Вся введённая фраза встречается внутри варианта
+        if (candidate.contains(query)) {
+            score += 500
+
+            // Особенно хорошо, если совпадение начинается с начала
+            if (candidate.startsWith(query)) {
+                score += 200
+            }
+        }
+
+        val candidateWords = candidate.split(" ")
+
+        for (queryWord in queryWords) {
+            var bestWordScore = 0
+
+            for (candidateWord in candidateWords) {
+                bestWordScore = maxOf(
+                    bestWordScore,
+                    when {
+                        candidateWord == queryWord -> 150
+
+                        candidateWord.startsWith(queryWord) -> 120
+
+                        candidateWord.contains(queryWord) -> 80
+
+                        queryWord.length >= 4 &&
+                                candidateWord.startsWith(queryWord.take(4)) -> 50
+
+                        else -> 0
+                    }
+                )
+            }
+
+            score += bestWordScore
+        }
+
+        // Все слова запроса нашли хотя бы какое-то совпадение
+        val allWordsMatched = queryWords.all { queryWord ->
+            candidateWords.any { candidateWord ->
+                candidateWord == queryWord ||
+                        candidateWord.startsWith(queryWord) ||
+                        candidateWord.contains(queryWord)
+            }
+        }
+
+        if (allWordsMatched) {
+            score += 250
+        }
+
+        return score
     }
 
     private fun normalizeForSearch(value: String): String = value
